@@ -34,6 +34,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = CountdownTimerService.shared
         _ = AmphetamineService.shared
         _ = MouseJigglerService.shared
+        _ = AutoScrollService.shared
         _ = GooglyEyesService.shared
         _ = VolumeBoostService.shared
         _ = GrammarCoachService.shared

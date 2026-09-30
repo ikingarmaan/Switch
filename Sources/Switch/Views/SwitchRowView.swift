@@ -85,31 +85,145 @@ public struct SwitchRowView: View {
                     .menuStyle(.borderlessButton)
                     .fixedSize()
                 } else if item.type == .mouseJiggler {
-                    Menu {
-                        ForEach(MouseJigglerService.shared.presets, id: \.seconds) { preset in
-                            Button(action: {
-                                MouseJigglerService.shared.setDuration(preset.seconds)
-                            }) {
-                                HStack {
-                                    Text(preset.label)
-                                    if MouseJigglerService.shared.selectedDuration == preset.seconds {
-                                        Image(systemName: "checkmark")
+                    HStack(spacing: 4) {
+                        Menu {
+                            Section("Move Distance (Tiles)") {
+                                ForEach(MouseJigglerService.shared.tilePresets, id: \.tiles) { preset in
+                                    Button(action: {
+                                        MouseJigglerService.shared.setMovementTiles(preset.tiles)
+                                    }) {
+                                        HStack {
+                                            Text(preset.label)
+                                            if MouseJigglerService.shared.movementTiles == preset.tiles {
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
                                     }
                                 }
                             }
+                            
+                            Divider()
+                            
+                            Section("Session Duration") {
+                                ForEach(MouseJigglerService.shared.presets, id: \.seconds) { preset in
+                                    Button(action: {
+                                        MouseJigglerService.shared.setDuration(preset.seconds)
+                                    }) {
+                                        HStack {
+                                            Text(preset.label)
+                                            if MouseJigglerService.shared.selectedDuration == preset.seconds {
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            Button(action: {
+                                MouseJigglerService.shared.testJiggleNow()
+                            }) {
+                                HStack {
+                                    Text("Test Move Now (\(MouseJigglerService.shared.movementTiles) tiles)")
+                                    Image(systemName: "cursorarrow.motionlines")
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 3) {
+                                Text(item.subtitle ?? MouseJigglerService.shared.formattedSubtitle)
+                                    .font(.system(size: 12, weight: item.isOn ? .bold : .regular, design: item.isOn ? .monospaced : .default))
+                                    .foregroundColor(item.isOn ? Color(red: 0.38, green: 0.75, blue: 0.98) : Color.gray.opacity(0.85))
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 8))
+                                    .foregroundColor(Color.gray.opacity(0.6))
+                            }
                         }
-                    } label: {
-                        HStack(spacing: 3) {
-                            Text(item.subtitle ?? MouseJigglerService.shared.formattedSelectedDuration)
-                                .font(.system(size: 12, weight: item.isOn ? .bold : .regular, design: item.isOn ? .monospaced : .default))
-                                .foregroundColor(item.isOn ? Color(red: 0.38, green: 0.75, blue: 0.98) : Color.gray.opacity(0.85))
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 8))
-                                .foregroundColor(Color.gray.opacity(0.6))
-                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
                     }
-                    .menuStyle(.borderlessButton)
-                    .fixedSize()
+                } else if item.type == .autoScroll {
+                    HStack(spacing: 4) {
+                        Menu {
+                            Section("Scroll Direction & Mode") {
+                                ForEach(ScrollMode.allCases) { mode in
+                                    Button(action: {
+                                        AutoScrollService.shared.setMode(mode)
+                                    }) {
+                                        HStack {
+                                            Text(mode.rawValue)
+                                            if AutoScrollService.shared.mode == mode {
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            Section("Scroll Speed") {
+                                ForEach(ScrollSpeed.allCases) { speed in
+                                    Button(action: {
+                                        AutoScrollService.shared.setSpeed(speed)
+                                    }) {
+                                        HStack {
+                                            Text(speed.rawValue)
+                                            if AutoScrollService.shared.speed == speed {
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            if AutoScrollService.shared.mode == .bounceUpDown {
+                                Divider()
+                                Section("Bounce Turnaround Range") {
+                                    ForEach(AutoScrollService.shared.bouncePresets, id: \.steps) { preset in
+                                        Button(action: {
+                                            AutoScrollService.shared.setBounceSteps(preset.steps)
+                                        }) {
+                                            HStack {
+                                                Text(preset.label)
+                                                if AutoScrollService.shared.bounceSteps == preset.steps {
+                                                    Image(systemName: "checkmark")
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            Section("Session Timer") {
+                                ForEach(AutoScrollService.shared.durationPresets, id: \.seconds) { preset in
+                                    Button(action: {
+                                        AutoScrollService.shared.setDuration(preset.seconds)
+                                    }) {
+                                        HStack {
+                                            Text(preset.label)
+                                            if AutoScrollService.shared.selectedDuration == preset.seconds {
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 3) {
+                                Text(item.subtitle ?? AutoScrollService.shared.statusSubtitle)
+                                    .font(.system(size: 12, weight: item.isOn ? .bold : .medium, design: .rounded))
+                                    .foregroundColor(item.isOn ? Color(red: 0.35, green: 0.85, blue: 0.65) : Color.gray.opacity(0.85))
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 8))
+                                    .foregroundColor(Color.gray.opacity(0.6))
+                            }
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                    }
                 } else if item.type == .googlyEyes {
                     HStack(spacing: 5) {
                         if item.isOn {

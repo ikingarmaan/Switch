@@ -29,6 +29,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
     case adblockDNS = "adblockDNS"
     case knockScreenshot = "knockScreenshot"
     case clipboardManager = "clipboardManager"
+    case autoScroll = "autoScroll"
     
     public var id: String { rawValue }
     
@@ -59,6 +60,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .adblockDNS: return "AdBlock DNS"
         case .knockScreenshot: return "Knock Screenshot"
         case .clipboardManager: return "Clipboard History"
+        case .autoScroll: return "Auto Scroll"
         }
     }
     
@@ -89,6 +91,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .adblockDNS: return "shield.fill"
         case .knockScreenshot: return "hand.tap.fill"
         case .clipboardManager: return "doc.on.clipboard.fill"
+        case .autoScroll: return "arrow.up.and.down.circle.fill"
         }
     }
     
@@ -161,8 +164,7 @@ public final class SystemControlService: @unchecked Sendable {
             
         case .mouseJiggler:
             let m = MouseJigglerService.shared
-            let sub = m.isActive ? m.formattedRemainingTime : m.formattedSelectedDuration
-            return (m.isActive, sub)
+            return (m.isActive, m.formattedSubtitle)
             
         case .googlyEyes:
             let g = GooglyEyesService.shared
@@ -216,6 +218,10 @@ public final class SystemControlService: @unchecked Sendable {
         case .clipboardManager:
             let clip = ClipboardService.shared
             return (clip.isEnabled, clip.statusSubtitle)
+            
+        case .autoScroll:
+            let scroll = AutoScrollService.shared
+            return (scroll.isActive, scroll.statusSubtitle)
         }
     }
     
@@ -352,6 +358,11 @@ public final class SystemControlService: @unchecked Sendable {
         case .clipboardManager:
             DispatchQueue.main.async {
                 ClipboardService.shared.setEnabled(isOn)
+            }
+            
+        case .autoScroll:
+            DispatchQueue.main.async {
+                AutoScrollService.shared.setEnabled(isOn)
             }
         }
     }

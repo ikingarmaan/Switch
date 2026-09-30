@@ -24,11 +24,23 @@ public final class MouseJigglerService: NSObject, ObservableObject, @unchecked S
         (0, "Indefinite")
     ]
     
+    // Configurable Tile Movement (how many tiles / distance the cursor travels per nudge)
+    @Published public var movementTiles: Int = 10
+    
+    public let tilePresets: [(tiles: Int, label: String)] = [
+        (2, "2 Tiles (Micro • 6px)"),
+        (5, "5 Tiles (Subtle • 15px)"),
+        (10, "10 Tiles (Standard • 30px)"),
+        (25, "25 Tiles (Medium • 75px)"),
+        (50, "50 Tiles (Wide • 150px)"),
+        (100, "100 Tiles (Wander • 300px)")
+    ]
+    
     private var secondTimer: Timer?
     private var jiggleTimer: Timer?
     private var targetEndTime: Date?
     private var displayAssertionID: IOPMAssertionID = 0
-    private var jiggleDelta: CGFloat = 2.0
+    private var jiggleSign: CGFloat = 1.0
     private let lock = NSLock()
     
     public var isIndefinite: Bool {
@@ -63,6 +75,11 @@ public final class MouseJigglerService: NSObject, ObservableObject, @unchecked S
         return "\(minutes)m"
     }
     
+    public var formattedSubtitle: String {
+        let dur = isActive ? formattedRemainingTime : formattedSelectedDuration
+        return "\(dur) • \(movementTiles) tiles"
+    }
+    
     override private init() {
         super.init()
         let saved = UserDefaults.standard.integer(forKey: "savedMouseJigglerDuration")
@@ -70,6 +87,20 @@ public final class MouseJigglerService: NSObject, ObservableObject, @unchecked S
             self.selectedDuration = saved
             self.remainingSeconds = saved
         }
+        
+        let savedTiles = UserDefaults.standard.integer(forKey: "savedMouseJigglerTiles")
+        if savedTiles > 0 {
+            self.movementTiles = savedTiles
+        } else {
+            self.movementTiles = 10
+        }
+    }
+    
+    public func setMovementTiles(_ tiles: Int) {
+        let clamped = max(1, min(200, tiles))
+        self.movementTiles = clamped
+        UserDefaults.standard.set(clamped, forKey: "savedMouseJigglerTiles")
+        NotificationCenter.default.post(name: .mouseJigglerTick, object: formattedSubtitle)
     }
     
     public func setDuration(_ seconds: Int) {
@@ -167,15 +198,47 @@ public final class MouseJigglerService: NSObject, ObservableObject, @unchecked S
         guard isActive else { return }
         
         let currentPos = CGEvent(source: nil)?.location ?? NSEvent.mouseLocation
-        let newX = currentPos.x + jiggleDelta
-        let newPos = CGPoint(x: newX, y: currentPos.y)
         
-        // Alternate direction (+2px, -2px) so cursor stays in place
-        jiggleDelta = -jiggleDelta
+        // 1 tile = ~4 pixels of cursor travel
+        let stepPixels = CGFloat(movementTiles * 4)
+        let delta = stepPixels * jiggleSign
+        var newX = currentPos.x + delta
+        let newY = currentPos.y
         
+        // Screen boundary safety: bounce back if approaching screen edge
+        if let screen = NSScreen.main {
+            let frame = screen.frame
+            if newX > frame.maxX - 20 {
+                newX = frame.maxX - 20
+                jiggleSign = -1.0
+            } else if newX < frame.minX + 20 {
+                newX = frame.minX + 20
+                jiggleSign = 1.0
+            }
+        }
+        
+        jiggleSign = -jiggleSign
+        
+        let newPos = CGPoint(x: newX, y: newY)
         CGWarpMouseCursorPosition(newPos)
         if let event = CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: newPos, mouseButton: .left) {
             event.post(tap: .cghidEventTap)
+        }
+    }
+    
+    public func testJiggleNow() {
+        let currentPos = CGEvent(source: nil)?.location ?? NSEvent.mouseLocation
+        let stepPixels = CGFloat(movementTiles * 4)
+        let newPos = CGPoint(x: currentPos.x + stepPixels, y: currentPos.y)
+        CGWarpMouseCursorPosition(newPos)
+        if let event = CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: newPos, mouseButton: .left) {
+            event.post(tap: .cghidEventTap)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            CGWarpMouseCursorPosition(currentPos)
+            if let event = CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: currentPos, mouseButton: .left) {
+                event.post(tap: .cghidEventTap)
+            }
         }
     }
     

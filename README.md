@@ -60,16 +60,19 @@ Download the pre-compiled, codesigned app bundle directly from GitHub Releases:
 | 🎥 **Loom Screen Recorder** | Screen recorder with a draggable circular camera bubble, audio narration, countdown, pause/resume, and instant review modal. |
 | 📊 **System Resource Monitor** | Live CPU %, RAM usage, and Network speed meters pinned to your menu bar with detailed process inspection popover. |
 | ☕️ **Amphetamine & Keep Awake** | Prevents sleep and display sleep indefinitely or for set durations (15m, 30m, 1h, 2h, 4h). |
-| 🐭 **Mouse Jiggler** | Simulates subtle cursor movements to keep your status active on Slack, Teams, and Zoom. |
+| 🐭 **Auto Mouse Movement** | Simulates cursor movements with **configurable tile travel distances** (2 tiles Micro, 5 tiles Subtle, 10 tiles Standard, 25 tiles Medium, 50 tiles Wide, 100 tiles Wander) and customizable timers. |
+| 📜 **Auto Scroll Up & Down** | Automatically scrolls any active window/feed up and down with **Bounce Mode**, **Continuous Down**, or **Continuous Up**, plus customizable speed (Slow, Normal, Fast) and turnaround range. |
 
 ---
 
 ## 📋 Complete Switches Catalog
 
-Switch packs over **24 native macOS switches** into an ultra-responsive, beautiful interface:
+Switch packs over **25 native macOS switches** into an ultra-responsive, beautiful interface:
 
 ### 🚀 Productivity & Workflow
 - **Clipboard History**: Saves up to 50 copied text and image items. Triggered via global shortcut `F9`.
+- **Auto Scroll (Up & Down)**: Automated hands-free scrolling with bounce turnaround, speed controls, and session timers.
+- **Auto Mouse Movement**: Prevents idle sleep and keeps status active on Slack/Teams with customizable tile distance steps.
 - **Chassis Knock Screenshot**: Accelerometer/microphone spectral peak analysis detects physical laptop chassis taps to take screenshots hands-free.
 - **Folder Tidy**: Automated cleanup for Desktop and Downloads with content-aware categorization.
 - **Loom Screen Recorder**: Full desktop recording + floating webcam bubble with 1-click export.

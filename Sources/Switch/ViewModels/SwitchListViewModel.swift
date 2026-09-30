@@ -117,7 +117,7 @@ public final class SwitchListViewModel: ObservableObject {
                 let m = MouseJigglerService.shared
                 self.switches[index].isOn = m.isActive
                 self.switches[index].isLoading = false
-                self.switches[index].subtitle = m.isActive ? m.formattedRemainingTime : m.formattedSelectedDuration
+                self.switches[index].subtitle = m.formattedSubtitle
             }
             .store(in: &cancellables)
             
@@ -125,13 +125,12 @@ public final class SwitchListViewModel: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] notif in
                 guard let self = self,
-                      let timeStr = notif.object as? String,
                       let index = self.switches.firstIndex(where: { $0.type == .mouseJiggler })
                 else { return }
-                if !timeStr.isEmpty {
+                if let timeStr = notif.object as? String, !timeStr.isEmpty {
                     self.switches[index].subtitle = timeStr
                 } else {
-                    self.switches[index].subtitle = MouseJigglerService.shared.formattedSelectedDuration
+                    self.switches[index].subtitle = MouseJigglerService.shared.formattedSubtitle
                 }
             }
             .store(in: &cancellables)
@@ -363,10 +362,38 @@ public final class SwitchListViewModel: ObservableObject {
                 }
             }
             .store(in: &cancellables)
+            
+        NotificationCenter.default.publisher(for: .autoScrollStateDidChange)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] notif in
+                guard let self = self,
+                      let index = self.switches.firstIndex(where: { $0.type == .autoScroll })
+                else { return }
+                let scroll = AutoScrollService.shared
+                let isRunning = notif.object as? Bool ?? scroll.isActive
+                self.switches[index].isOn = isRunning
+                self.switches[index].isLoading = false
+                self.switches[index].subtitle = scroll.statusSubtitle
+            }
+            .store(in: &cancellables)
+            
+        NotificationCenter.default.publisher(for: .autoScrollTick)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] notif in
+                guard let self = self,
+                      let index = self.switches.firstIndex(where: { $0.type == .autoScroll })
+                else { return }
+                if let text = notif.object as? String {
+                    self.switches[index].subtitle = text
+                } else {
+                    self.switches[index].subtitle = AutoScrollService.shared.statusSubtitle
+                }
+            }
+            .store(in: &cancellables)
     }
     
     private func setupSwitches() {
-        // Ordered as shown in user's image + lockKeyboard + cameraPreview + timer + amphetamine + mouseJiggler + googlyEyes + volumeBoost + grammarCoach + systemMonitor + loomRecorder + forceQuitApps + autoVPN + tidyFolders + adblockDNS + knockScreenshot + clipboardManager
+        // Ordered as shown in user's image + lockKeyboard + cameraPreview + timer + amphetamine + mouseJiggler + autoScroll + googlyEyes + volumeBoost + grammarCoach + systemMonitor + loomRecorder + forceQuitApps + autoVPN + tidyFolders + adblockDNS + knockScreenshot + clipboardManager
         let initialTypes: [SwitchType] = [
             .hideDesktop,
             .keepAwake,
@@ -380,6 +407,7 @@ public final class SwitchListViewModel: ObservableObject {
             .timer,
             .amphetamine,
             .mouseJiggler,
+            .autoScroll,
             .googlyEyes,
             .volumeBoost,
             .grammarCoach,
