@@ -1268,7 +1268,19 @@ public struct SwitchRowView: View {
                             }) {
                                 HStack {
                                     Text("New Sticky Note")
-                                    Image(systemName: "plus")
+                                    Image(systemName: "square.and.pencil")
+                                }
+                            }
+                            
+                            Button(action: {
+                                StickyNotesService.shared.createNote(
+                                    isChecklist: true,
+                                    checklistItems: [StickyChecklistItem(title: "", isCompleted: false)]
+                                )
+                            }) {
+                                HStack {
+                                    Text("New To-Do Checklist")
+                                    Image(systemName: "checklist")
                                 }
                             }
                             
@@ -1355,7 +1367,19 @@ public struct SwitchRowView: View {
                         }) {
                             HStack {
                                 Text("New Sticky Note")
-                                Image(systemName: "plus")
+                                Image(systemName: "square.and.pencil")
+                            }
+                        }
+                        
+                        Button(action: {
+                            StickyNotesService.shared.createNote(
+                                isChecklist: true,
+                                checklistItems: [StickyChecklistItem(title: "", isCompleted: false)]
+                            )
+                        }) {
+                            HStack {
+                                Text("New To-Do Checklist")
+                                Image(systemName: "checklist")
                             }
                         }
                         

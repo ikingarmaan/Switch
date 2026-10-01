@@ -9,6 +9,10 @@ public final class StickyNoteViewState: ObservableObject {
     @Published public var isHoveringPin: Bool = false
     @Published public var isHoveringAdd: Bool = false
     @Published public var isHoveringCopy: Bool = false
+    @Published public var isHoveringChecklist: Bool = false
+    @Published public var isHoveringFormat: Bool = false
+    @Published public var showFormatBar: Bool = false
+    @Published public var newItemText: String = ""
     
     public init() {}
 }
@@ -121,42 +125,23 @@ public struct StickyNoteView: View {
                     headerBar(note: note)
                     
                     if !note.isCollapsed {
+                        // Optional Formatting Drawer
+                        if viewState.showFormatBar {
+                            formatBar(note: note)
+                                .transition(.opacity.combined(with: .move(edge: .top)))
+                        }
+                        
                         Divider()
                             .background(note.color.borderColor.opacity(0.6))
                         
-                        // Native Multiline Text Editor
-                        ZStack(alignment: .topLeading) {
-                            if note.content.isEmpty {
-                                Text("Type your note, reminder, or idea...")
-                                    .font(.system(size: 13.5, weight: .regular, design: .rounded))
-                                    .foregroundColor(note.color.textColor.opacity(0.42))
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 10)
-                                    .allowsHitTesting(false)
-                            }
-                            
-                            TextEditor(text: Binding(
-                                get: { note.content },
-                                set: { newText in
-                                    service.updateNoteContent(id: note.id, content: newText)
-                                }
-                            ))
-                            .font(.system(size: 13.5, weight: .regular, design: .rounded))
-                            .foregroundColor(note.color.textColor)
-                            .accentColor(note.color.textColor)
-                            .scrollContentBackground(.hidden)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 6)
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            if !NSApp.isActive {
-                                NSApp.activate(ignoringOtherApps: true)
-                            }
+                        // Main Note Body: Checklist vs Freeform Text
+                        if note.isChecklistMode {
+                            checklistBody(note: note)
+                        } else {
+                            textEditorBody(note: note)
                         }
                         
-                        // Footer Bar (Time & Resize handle)
+                        // Footer Bar (Stats & Resize handle)
                         footerBar(note: note)
                     }
                 }
@@ -174,8 +159,8 @@ public struct StickyNoteView: View {
             // Drag Area Background
             WindowDragAreaView()
             
-            HStack(spacing: 6) {
-                // Left Controls: Close / Delete
+            HStack(spacing: 5) {
+                // Close / Delete
                 Button(action: {
                     service.deleteNote(id: note.id)
                 }) {
@@ -211,11 +196,11 @@ public struct StickyNoteView: View {
                 .help(note.isCollapsed ? "Expand Note" : "Collapse Note")
                 .onHover { viewState.isHoveringCollapse = $0 }
                 
-                Spacer(minLength: 4)
+                Spacer(minLength: 2)
                 
                 // Color Palette Swatches (7 vibrant dots)
                 if !note.isCollapsed {
-                    HStack(spacing: 5) {
+                    HStack(spacing: 4) {
                         ForEach(StickyNoteColor.allCases) { color in
                             Button(action: {
                                 service.updateNoteColor(id: note.id, color: color)
@@ -223,12 +208,12 @@ public struct StickyNoteView: View {
                                 ZStack {
                                     Circle()
                                         .fill(color.dotColor)
-                                        .frame(width: 11, height: 11)
+                                        .frame(width: 10, height: 10)
                                     
                                     if note.color == color {
                                         Circle()
                                             .stroke(note.color.textColor.opacity(0.85), lineWidth: 1.5)
-                                            .frame(width: 15, height: 15)
+                                            .frame(width: 14, height: 14)
                                     }
                                 }
                             }
@@ -236,7 +221,7 @@ public struct StickyNoteView: View {
                             .help(color.title)
                         }
                     }
-                    .padding(.horizontal, 4)
+                    .padding(.horizontal, 2)
                 } else {
                     // Collapsed preview text snippet
                     Text(collapsedPreviewText(note: note))
@@ -250,7 +235,45 @@ public struct StickyNoteView: View {
                         }
                 }
                 
-                Spacer(minLength: 4)
+                Spacer(minLength: 2)
+                
+                // Checklist Mode Toggle Button
+                Button(action: {
+                    service.toggleChecklistMode(id: note.id)
+                }) {
+                    ZStack {
+                        Circle()
+                            .fill(note.isChecklistMode ? Color.green.opacity(0.85) : (viewState.isHoveringChecklist ? note.color.headerButtonBg.opacity(1.8) : note.color.headerButtonBg))
+                            .frame(width: 20, height: 20)
+                        
+                        Image(systemName: note.isChecklistMode ? "checklist.checked" : "checklist")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(note.isChecklistMode ? .white : note.color.textColor.opacity(0.8))
+                    }
+                }
+                .buttonStyle(.plain)
+                .help(note.isChecklistMode ? "Switch to Plain Text Note" : "Switch to To-Do Checklist")
+                .onHover { viewState.isHoveringChecklist = $0 }
+                
+                // Format Bar Toggle Button
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        viewState.showFormatBar.toggle()
+                    }
+                }) {
+                    ZStack {
+                        Circle()
+                            .fill(viewState.showFormatBar ? Color.blue.opacity(0.85) : (viewState.isHoveringFormat ? note.color.headerButtonBg.opacity(1.8) : note.color.headerButtonBg))
+                            .frame(width: 20, height: 20)
+                        
+                        Image(systemName: "textformat")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(viewState.showFormatBar ? .white : note.color.textColor.opacity(0.8))
+                    }
+                }
+                .buttonStyle(.plain)
+                .help(viewState.showFormatBar ? "Hide Formatting Toolbar" : "Show Alignment & Font Size Toolbar")
+                .onHover { viewState.isHoveringFormat = $0 }
                 
                 // Pin to Desktop (Home Page) vs Float on Top
                 Button(action: {
@@ -306,17 +329,278 @@ public struct StickyNoteView: View {
                 .help("Copy Note Content")
                 .onHover { viewState.isHoveringCopy = $0 }
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, 8)
         }
         .frame(height: 34)
+    }
+    
+    // MARK: - Formatting & Alignment Bar
+    private func formatBar(note: StickyNote) -> some View {
+        HStack(spacing: 8) {
+            // Text Alignment Controls (Left, Center, Right)
+            HStack(spacing: 2) {
+                ForEach(StickyNoteTextAlignment.allCases) { align in
+                    Button(action: {
+                        service.setTextAlignment(id: note.id, alignment: align)
+                    }) {
+                        Image(systemName: align.icon)
+                            .font(.system(size: 10, weight: note.textAlignment == align ? .bold : .regular))
+                            .foregroundColor(note.textAlignment == align ? .white : note.color.textColor.opacity(0.7))
+                            .frame(width: 22, height: 18)
+                            .background(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(note.textAlignment == align ? Color.blue.opacity(0.85) : Color.clear)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .help(align.title)
+                }
+            }
+            .padding(2)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(note.color.headerButtonBg)
+            )
+            
+            Divider()
+                .frame(height: 14)
+                .background(note.color.borderColor.opacity(0.5))
+            
+            // Font Size Controls (S, M, L)
+            HStack(spacing: 2) {
+                ForEach(StickyNoteFontSize.allCases) { size in
+                    Button(action: {
+                        service.setFontSize(id: note.id, fontSize: size)
+                    }) {
+                        Text(size.label)
+                            .font(.system(size: 9, weight: note.fontSize == size ? .bold : .medium, design: .rounded))
+                            .foregroundColor(note.fontSize == size ? .white : note.color.textColor.opacity(0.75))
+                            .frame(width: 18, height: 18)
+                            .background(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(note.fontSize == size ? Color.blue.opacity(0.85) : Color.clear)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .help("Font size: \(size.title)")
+                }
+            }
+            .padding(2)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(note.color.headerButtonBg)
+            )
+            
+            Spacer()
+            
+            // Quick Helpers: Insert Bullet & Timestamp
+            HStack(spacing: 4) {
+                Button(action: {
+                    service.insertBulletPoint(id: note.id)
+                }) {
+                    Text("• Bullet")
+                        .font(.system(size: 9, weight: .medium, design: .rounded))
+                        .foregroundColor(note.color.textColor.opacity(0.8))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(note.color.headerButtonBg)
+                        )
+                }
+                .buttonStyle(.plain)
+                .help("Add bullet point")
+                
+                Button(action: {
+                    service.insertCurrentDate(id: note.id)
+                }) {
+                    Image(systemName: "clock")
+                        .font(.system(size: 9))
+                        .foregroundColor(note.color.textColor.opacity(0.8))
+                        .padding(3)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(note.color.headerButtonBg)
+                        )
+                }
+                .buttonStyle(.plain)
+                .help("Insert current date & time")
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .background(note.color.headerButtonBg.opacity(0.5))
+    }
+    
+    // MARK: - Freeform Text Editor Body
+    private func textEditorBody(note: StickyNote) -> some View {
+        ZStack(alignment: note.textAlignment == .center ? .top : (note.textAlignment == .right ? .topTrailing : .topLeading)) {
+            if note.content.isEmpty {
+                Text("Type your note, reminder, or idea...")
+                    .font(.system(size: note.fontSize.pointSize, weight: .regular, design: .rounded))
+                    .foregroundColor(note.color.textColor.opacity(0.42))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .allowsHitTesting(false)
+            }
+            
+            TextEditor(text: Binding(
+                get: { note.content },
+                set: { newText in
+                    service.updateNoteContent(id: note.id, content: newText)
+                }
+            ))
+            .font(.system(size: note.fontSize.pointSize, weight: .regular, design: .rounded))
+            .multilineTextAlignment(note.textAlignment.textAlignment)
+            .foregroundColor(note.color.textColor)
+            .accentColor(note.color.textColor)
+            .scrollContentBackground(.hidden)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if !NSApp.isActive {
+                NSApp.activate(ignoringOtherApps: true)
+            }
+        }
+    }
+    
+    // MARK: - Checklist / To-Do Mode Body
+    private func checklistBody(note: StickyNote) -> some View {
+        ScrollView {
+            VStack(spacing: 4) {
+                ForEach(note.checklistItems) { item in
+                    HStack(spacing: 7) {
+                        // Checkbox Button
+                        Button(action: {
+                            service.updateChecklistItem(noteId: note.id, itemId: item.id, isCompleted: !item.isCompleted)
+                            NSSound(named: "Tink")?.play()
+                        }) {
+                            ZStack {
+                                if item.isCompleted {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundColor(Color.green)
+                                } else {
+                                    Circle()
+                                        .strokeBorder(note.color.textColor.opacity(0.45), lineWidth: 1.5)
+                                        .frame(width: 14, height: 14)
+                                }
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .help(item.isCompleted ? "Mark incomplete" : "Mark completed")
+                        
+                        // Editable Item Text
+                        TextField(
+                            "Task...",
+                            text: Binding(
+                                get: { item.title },
+                                set: { newTitle in
+                                    service.updateChecklistItem(noteId: note.id, itemId: item.id, title: newTitle)
+                                }
+                            )
+                        )
+                        .textFieldStyle(.plain)
+                        .font(.system(size: note.fontSize.pointSize, weight: .regular, design: .rounded))
+                        .multilineTextAlignment(note.textAlignment.textAlignment)
+                        .strikethrough(item.isCompleted, color: note.color.textColor.opacity(0.55))
+                        .foregroundColor(item.isCompleted ? note.color.textColor.opacity(0.40) : note.color.textColor)
+                        .onSubmit {
+                            service.addChecklistItem(noteId: note.id, afterItemId: item.id)
+                        }
+                        
+                        // Delete Task Button
+                        Button(action: {
+                            service.deleteChecklistItem(noteId: note.id, itemId: item.id)
+                        }) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 7, weight: .semibold))
+                                .foregroundColor(note.color.textColor.opacity(0.35))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Delete task")
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(item.isCompleted ? note.color.headerButtonBg.opacity(0.3) : Color.clear)
+                    )
+                }
+                
+                // Add Item Row
+                HStack(spacing: 6) {
+                    Button(action: {
+                        service.addChecklistItem(noteId: note.id)
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.system(size: 11))
+                            Text("Add Task")
+                                .font(.system(size: 11, weight: .medium, design: .rounded))
+                        }
+                        .foregroundColor(note.color.textColor.opacity(0.7))
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(note.color.headerButtonBg)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    
+                    Spacer()
+                    
+                    // Clear completed button
+                    let completedCount = note.checklistItems.filter { $0.isCompleted }.count
+                    if completedCount > 0 {
+                        Button(action: {
+                            service.clearCompletedChecklistItems(noteId: note.id)
+                        }) {
+                            HStack(spacing: 3) {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 9))
+                                Text("Clear Done (\(completedCount))")
+                                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                            }
+                            .foregroundColor(note.color.textColor.opacity(0.65))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Clear all checked tasks")
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.top, 4)
+            }
+            .padding(.vertical, 6)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     
     // MARK: - Footer Bar
     private func footerBar(note: StickyNote) -> some View {
         HStack {
-            Text(formattedTimestamp(date: note.updatedAt))
-                .font(.system(size: 10, weight: .medium, design: .rounded))
-                .foregroundColor(note.color.secondaryTextColor)
+            if note.isChecklistMode {
+                let total = note.checklistItems.count
+                let done = note.checklistItems.filter { $0.isCompleted }.count
+                if total > 0 && done == total {
+                    Text("All done! 🎉")
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundColor(Color.green)
+                } else {
+                    Text("\(done) of \(total) done")
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .foregroundColor(note.color.secondaryTextColor)
+                }
+            } else {
+                let words = note.content.split(whereSeparator: \.isWhitespace).count
+                Text(words > 0 ? "\(words) \(words == 1 ? "word" : "words")" : formattedTimestamp(date: note.updatedAt))
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .foregroundColor(note.color.secondaryTextColor)
+            }
             
             Spacer()
             
@@ -338,7 +622,15 @@ public struct StickyNoteView: View {
     private func copyNoteText(note: StickyNote) {
         let pb = NSPasteboard.general
         pb.clearContents()
-        pb.setString(note.content, forType: .string)
+        
+        if note.isChecklistMode {
+            let lines = note.checklistItems.map { item in
+                (item.isCompleted ? "[✓] " : "[ ] ") + item.title
+            }
+            pb.setString(lines.joined(separator: "\n"), forType: .string)
+        } else {
+            pb.setString(note.content, forType: .string)
+        }
         
         viewState.isCopiedFeedback = true
         NSSound(named: "Tink")?.play()
@@ -348,12 +640,19 @@ public struct StickyNoteView: View {
     }
     
     private func collapsedPreviewText(note: StickyNote) -> String {
-        let trimmed = note.content.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            return "Sticky Note"
+        if note.isChecklistMode {
+            let firstIncomplete = note.checklistItems.first(where: { !$0.isCompleted })?.title
+            let firstAny = note.checklistItems.first?.title
+            let candidate = (firstIncomplete?.isEmpty == false ? firstIncomplete : firstAny) ?? "Checklist"
+            return "☑️ " + candidate
+        } else {
+            let trimmed = note.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                return "Sticky Note"
+            }
+            let firstLine = trimmed.components(separatedBy: .newlines).first ?? trimmed
+            return firstLine
         }
-        let firstLine = trimmed.components(separatedBy: .newlines).first ?? trimmed
-        return firstLine
     }
     
     private func formattedTimestamp(date: Date) -> String {

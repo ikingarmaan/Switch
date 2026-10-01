@@ -104,6 +104,85 @@ public enum StickyNoteColor: String, Codable, CaseIterable, Identifiable, Sendab
     }
 }
 
+// MARK: - Text Alignment
+public enum StickyNoteTextAlignment: String, Codable, CaseIterable, Identifiable, Sendable {
+    case left
+    case center
+    case right
+    
+    public var id: String { rawValue }
+    
+    public var textAlignment: TextAlignment {
+        switch self {
+        case .left: return .leading
+        case .center: return .center
+        case .right: return .trailing
+        }
+    }
+    
+    public var icon: String {
+        switch self {
+        case .left: return "text.alignleft"
+        case .center: return "text.aligncenter"
+        case .right: return "text.alignright"
+        }
+    }
+    
+    public var title: String {
+        switch self {
+        case .left: return "Align Left"
+        case .center: return "Align Center"
+        case .right: return "Align Right"
+        }
+    }
+}
+
+// MARK: - Font Size
+public enum StickyNoteFontSize: String, Codable, CaseIterable, Identifiable, Sendable {
+    case small
+    case regular
+    case large
+    
+    public var id: String { rawValue }
+    
+    public var pointSize: CGFloat {
+        switch self {
+        case .small: return 12.0
+        case .regular: return 13.5
+        case .large: return 16.5
+        }
+    }
+    
+    public var label: String {
+        switch self {
+        case .small: return "S"
+        case .regular: return "M"
+        case .large: return "L"
+        }
+    }
+    
+    public var title: String {
+        switch self {
+        case .small: return "Small"
+        case .regular: return "Normal"
+        case .large: return "Large"
+        }
+    }
+}
+
+// MARK: - Checklist Item
+public struct StickyChecklistItem: Identifiable, Codable, Equatable, Sendable {
+    public var id: UUID
+    public var title: String
+    public var isCompleted: Bool
+    
+    public init(id: UUID = UUID(), title: String = "", isCompleted: Bool = false) {
+        self.id = id
+        self.title = title
+        self.isCompleted = isCompleted
+    }
+}
+
 // MARK: - Sticky Note Model
 public struct StickyNote: Identifiable, Codable, Equatable, Sendable {
     public let id: UUID
@@ -115,6 +194,10 @@ public struct StickyNote: Identifiable, Codable, Equatable, Sendable {
     public var height: CGFloat
     public var isPinnedToDesktop: Bool
     public var isCollapsed: Bool
+    public var textAlignment: StickyNoteTextAlignment
+    public var fontSize: StickyNoteFontSize
+    public var isChecklistMode: Bool
+    public var checklistItems: [StickyChecklistItem]
     public var createdAt: Date
     public var updatedAt: Date
     
@@ -128,6 +211,10 @@ public struct StickyNote: Identifiable, Codable, Equatable, Sendable {
         height: CGFloat = 240,
         isPinnedToDesktop: Bool = true,
         isCollapsed: Bool = false,
+        textAlignment: StickyNoteTextAlignment = .left,
+        fontSize: StickyNoteFontSize = .regular,
+        isChecklistMode: Bool = false,
+        checklistItems: [StickyChecklistItem] = [],
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -140,8 +227,31 @@ public struct StickyNote: Identifiable, Codable, Equatable, Sendable {
         self.height = height
         self.isPinnedToDesktop = isPinnedToDesktop
         self.isCollapsed = isCollapsed
+        self.textAlignment = textAlignment
+        self.fontSize = fontSize
+        self.isChecklistMode = isChecklistMode
+        self.checklistItems = checklistItems
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+    }
+    
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(UUID.self, forKey: .id)
+        self.content = try container.decode(String.self, forKey: .content)
+        self.color = try container.decode(StickyNoteColor.self, forKey: .color)
+        self.x = try container.decode(CGFloat.self, forKey: .x)
+        self.y = try container.decode(CGFloat.self, forKey: .y)
+        self.width = try container.decode(CGFloat.self, forKey: .width)
+        self.height = try container.decode(CGFloat.self, forKey: .height)
+        self.isPinnedToDesktop = try container.decode(Bool.self, forKey: .isPinnedToDesktop)
+        self.isCollapsed = try container.decode(Bool.self, forKey: .isCollapsed)
+        self.textAlignment = try container.decodeIfPresent(StickyNoteTextAlignment.self, forKey: .textAlignment) ?? .left
+        self.fontSize = try container.decodeIfPresent(StickyNoteFontSize.self, forKey: .fontSize) ?? .regular
+        self.isChecklistMode = try container.decodeIfPresent(Bool.self, forKey: .isChecklistMode) ?? false
+        self.checklistItems = try container.decodeIfPresent([StickyChecklistItem].self, forKey: .checklistItems) ?? []
+        self.createdAt = try container.decode(Date.self, forKey: .createdAt)
+        self.updatedAt = try container.decode(Date.self, forKey: .updatedAt)
     }
 }
 
@@ -260,10 +370,15 @@ public final class StickyNotesService: ObservableObject, @unchecked Sendable {
         setVisibility(!isVisible)
     }
     
-    // MARK: - Note Operations
-    
     @discardableResult
-    public func createNote(color: StickyNoteColor? = nil, content: String = "") -> StickyNote {
+    public func createNote(
+        color: StickyNoteColor? = nil,
+        content: String = "",
+        isChecklist: Bool = false,
+        checklistItems: [StickyChecklistItem] = [],
+        alignment: StickyNoteTextAlignment = .left,
+        fontSize: StickyNoteFontSize = .regular
+    ) -> StickyNote {
         let chosenColor = color ?? defaultColor
         
         // Calculate a nice default position cascading from top-right
@@ -285,6 +400,10 @@ public final class StickyNotesService: ObservableObject, @unchecked Sendable {
             height: 240,
             isPinnedToDesktop: defaultPinToDesktop,
             isCollapsed: false,
+            textAlignment: alignment,
+            fontSize: fontSize,
+            isChecklistMode: isChecklist,
+            checklistItems: checklistItems,
             createdAt: Date(),
             updatedAt: Date()
         )
@@ -334,6 +453,126 @@ public final class StickyNotesService: ObservableObject, @unchecked Sendable {
     public func updateNoteColor(id: UUID, color: StickyNoteColor) {
         guard let index = notes.firstIndex(where: { $0.id == id }) else { return }
         notes[index].color = color
+        notes[index].updatedAt = Date()
+        saveNotesDebounced()
+    }
+    
+    public func setTextAlignment(id: UUID, alignment: StickyNoteTextAlignment) {
+        guard let index = notes.firstIndex(where: { $0.id == id }) else { return }
+        notes[index].textAlignment = alignment
+        notes[index].updatedAt = Date()
+        saveNotesDebounced()
+    }
+    
+    public func setFontSize(id: UUID, fontSize: StickyNoteFontSize) {
+        guard let index = notes.firstIndex(where: { $0.id == id }) else { return }
+        notes[index].fontSize = fontSize
+        notes[index].updatedAt = Date()
+        saveNotesDebounced()
+    }
+    
+    public func toggleChecklistMode(id: UUID) {
+        guard let index = notes.firstIndex(where: { $0.id == id }) else { return }
+        let nowChecklist = !notes[index].isChecklistMode
+        notes[index].isChecklistMode = nowChecklist
+        
+        if nowChecklist {
+            // Convert plain text into checklist items
+            if notes[index].checklistItems.isEmpty {
+                let lines = notes[index].content.components(separatedBy: .newlines)
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                    .filter { !$0.isEmpty }
+                if lines.isEmpty {
+                    notes[index].checklistItems = [StickyChecklistItem(title: "", isCompleted: false)]
+                } else {
+                    notes[index].checklistItems = lines.map { line in
+                        let isDone = line.hasPrefix("[x] ") || line.hasPrefix("✓ ") || line.hasPrefix("✔ ")
+                        let clean = line
+                            .replacingOccurrences(of: "[x] ", with: "")
+                            .replacingOccurrences(of: "[ ] ", with: "")
+                            .replacingOccurrences(of: "✓ ", with: "")
+                            .replacingOccurrences(of: "✔ ", with: "")
+                            .replacingOccurrences(of: "• ", with: "")
+                            .replacingOccurrences(of: "- ", with: "")
+                        return StickyChecklistItem(title: clean, isCompleted: isDone)
+                    }
+                }
+            }
+        } else {
+            // Convert checklist items into plain text
+            let lines = notes[index].checklistItems.map { item in
+                (item.isCompleted ? "[x] " : "[ ] ") + item.title
+            }
+            notes[index].content = lines.joined(separator: "\n")
+        }
+        notes[index].updatedAt = Date()
+        saveNotesDebounced()
+    }
+    
+    public func addChecklistItem(noteId: UUID, afterItemId: UUID? = nil) {
+        guard let noteIndex = notes.firstIndex(where: { $0.id == noteId }) else { return }
+        let newItem = StickyChecklistItem()
+        if let afterId = afterItemId, let itemIndex = notes[noteIndex].checklistItems.firstIndex(where: { $0.id == afterId }) {
+            notes[noteIndex].checklistItems.insert(newItem, at: itemIndex + 1)
+        } else {
+            notes[noteIndex].checklistItems.append(newItem)
+        }
+        notes[noteIndex].updatedAt = Date()
+        saveNotesDebounced()
+    }
+    
+    public func updateChecklistItem(noteId: UUID, itemId: UUID, title: String? = nil, isCompleted: Bool? = nil) {
+        guard let noteIndex = notes.firstIndex(where: { $0.id == noteId }),
+              let itemIndex = notes[noteIndex].checklistItems.firstIndex(where: { $0.id == itemId })
+        else { return }
+        if let t = title { notes[noteIndex].checklistItems[itemIndex].title = t }
+        if let c = isCompleted { notes[noteIndex].checklistItems[itemIndex].isCompleted = c }
+        notes[noteIndex].updatedAt = Date()
+        saveNotesDebounced()
+    }
+    
+    public func deleteChecklistItem(noteId: UUID, itemId: UUID) {
+        guard let noteIndex = notes.firstIndex(where: { $0.id == noteId }) else { return }
+        notes[noteIndex].checklistItems.removeAll(where: { $0.id == itemId })
+        if notes[noteIndex].checklistItems.isEmpty {
+            notes[noteIndex].checklistItems.append(StickyChecklistItem())
+        }
+        notes[noteIndex].updatedAt = Date()
+        saveNotesDebounced()
+    }
+    
+    public func clearCompletedChecklistItems(noteId: UUID) {
+        guard let noteIndex = notes.firstIndex(where: { $0.id == noteId }) else { return }
+        notes[noteIndex].checklistItems.removeAll(where: { $0.isCompleted })
+        if notes[noteIndex].checklistItems.isEmpty {
+            notes[noteIndex].checklistItems.append(StickyChecklistItem())
+        }
+        notes[noteIndex].updatedAt = Date()
+        saveNotesDebounced()
+    }
+    
+    public func insertBulletPoint(id: UUID) {
+        guard let index = notes.firstIndex(where: { $0.id == id }) else { return }
+        if notes[index].content.isEmpty {
+            notes[index].content = "• "
+        } else {
+            notes[index].content += "\n• "
+        }
+        notes[index].updatedAt = Date()
+        saveNotesDebounced()
+    }
+    
+    public func insertCurrentDate(id: UUID) {
+        guard let index = notes.firstIndex(where: { $0.id == id }) else { return }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        let stamp = "[\(formatter.string(from: Date()))] "
+        if notes[index].content.isEmpty {
+            notes[index].content = stamp
+        } else {
+            notes[index].content += "\n" + stamp
+        }
         notes[index].updatedAt = Date()
         saveNotesDebounced()
     }
@@ -523,17 +762,21 @@ public final class StickyNotesService: ObservableObject, @unchecked Sendable {
     // MARK: - Welcome Note
     
     private func createWelcomeNote() {
-        let welcomeText = """
-        ✨ Welcome to Switch Sticky Notes!
-        
-        • Click the color dots above to change my theme 🎨
-        • Click 📌 to pin me to your Desktop (Home Page)
-        • Drag me anywhere by my top bar
-        • Click + to add new notes
-        
-        Everything saves automatically!
-        """
-        createNote(color: .yellow, content: welcomeText)
+        let welcomeItems = [
+            StickyChecklistItem(title: "Welcome to Sticky Notes! 🎨", isCompleted: true),
+            StickyChecklistItem(title: "Click checkbox to mark done ☑️", isCompleted: false),
+            StickyChecklistItem(title: "Click ≡ in format bar for Left/Center/Right alignment", isCompleted: false),
+            StickyChecklistItem(title: "Click 📌 to pin to Desktop (Home Page)", isCompleted: false),
+            StickyChecklistItem(title: "Drag me anywhere by top header", isCompleted: false)
+        ]
+        createNote(
+            color: .yellow,
+            content: "",
+            isChecklist: true,
+            checklistItems: welcomeItems,
+            alignment: .left,
+            fontSize: .regular
+        )
     }
     
     // MARK: - Disk Persistence
