@@ -30,6 +30,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
     case knockScreenshot = "knockScreenshot"
     case clipboardManager = "clipboardManager"
     case autoScroll = "autoScroll"
+    case stickyNotes = "stickyNotes"
     
     public var id: String { rawValue }
     
@@ -61,6 +62,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .knockScreenshot: return "Knock Screenshot"
         case .clipboardManager: return "Clipboard History"
         case .autoScroll: return "Auto Scroll"
+        case .stickyNotes: return "Sticky Notes"
         }
     }
     
@@ -92,6 +94,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .knockScreenshot: return "hand.tap.fill"
         case .clipboardManager: return "doc.on.clipboard.fill"
         case .autoScroll: return "arrow.up.and.down.circle.fill"
+        case .stickyNotes: return "note.text"
         }
     }
     
@@ -222,6 +225,10 @@ public final class SystemControlService: @unchecked Sendable {
         case .autoScroll:
             let scroll = AutoScrollService.shared
             return (scroll.isActive, scroll.statusSubtitle)
+            
+        case .stickyNotes:
+            let notes = StickyNotesService.shared
+            return (notes.isVisible, notes.statusSubtitle)
         }
     }
     
@@ -363,6 +370,11 @@ public final class SystemControlService: @unchecked Sendable {
         case .autoScroll:
             DispatchQueue.main.async {
                 AutoScrollService.shared.setEnabled(isOn)
+            }
+            
+        case .stickyNotes:
+            DispatchQueue.main.async {
+                StickyNotesService.shared.setVisibility(isOn)
             }
         }
     }

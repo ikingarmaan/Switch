@@ -46,6 +46,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = DNSService.shared
         _ = KnockScreenshotService.shared
         _ = ClipboardService.shared
+        _ = StickyNotesService.shared
         
         setupPopover()
         

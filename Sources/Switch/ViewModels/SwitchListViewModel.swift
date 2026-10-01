@@ -390,10 +390,34 @@ public final class SwitchListViewModel: ObservableObject {
                 }
             }
             .store(in: &cancellables)
+            
+        NotificationCenter.default.publisher(for: .stickyNotesStateDidChange)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self = self,
+                      let index = self.switches.firstIndex(where: { $0.type == .stickyNotes })
+                else { return }
+                let s = StickyNotesService.shared
+                self.switches[index].isOn = s.isVisible
+                self.switches[index].isLoading = false
+                self.switches[index].subtitle = s.statusSubtitle
+            }
+            .store(in: &cancellables)
+            
+        NotificationCenter.default.publisher(for: .stickyNotesCountDidChange)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self = self,
+                      let index = self.switches.firstIndex(where: { $0.type == .stickyNotes })
+                else { return }
+                let s = StickyNotesService.shared
+                self.switches[index].subtitle = s.statusSubtitle
+            }
+            .store(in: &cancellables)
     }
     
     private func setupSwitches() {
-        // Ordered as shown in user's image + lockKeyboard + cameraPreview + timer + amphetamine + mouseJiggler + autoScroll + googlyEyes + volumeBoost + grammarCoach + systemMonitor + loomRecorder + forceQuitApps + autoVPN + tidyFolders + adblockDNS + knockScreenshot + clipboardManager
+        // Ordered as shown in user's image + lockKeyboard + cameraPreview + timer + amphetamine + mouseJiggler + autoScroll + googlyEyes + volumeBoost + grammarCoach + systemMonitor + loomRecorder + forceQuitApps + autoVPN + tidyFolders + adblockDNS + knockScreenshot + clipboardManager + stickyNotes
         let initialTypes: [SwitchType] = [
             .hideDesktop,
             .keepAwake,
@@ -418,7 +442,8 @@ public final class SwitchListViewModel: ObservableObject {
             .tidyFolders,
             .adblockDNS,
             .knockScreenshot,
-            .clipboardManager
+            .clipboardManager,
+            .stickyNotes
         ]
         
         self.switches = initialTypes.map { type in

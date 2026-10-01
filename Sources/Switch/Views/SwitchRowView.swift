@@ -1250,6 +1250,146 @@ public struct SwitchRowView: View {
                             }
                         }
                     }
+                } else if item.type == .stickyNotes {
+                    HStack(spacing: 6) {
+                        Button(action: {
+                            StickyNotesService.shared.createNote()
+                        }) {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(Color(red: 1.0, green: 0.82, blue: 0.10))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Add New Sticky Note")
+                        
+                        Menu {
+                            Button(action: {
+                                StickyNotesService.shared.createNote()
+                            }) {
+                                HStack {
+                                    Text("New Sticky Note")
+                                    Image(systemName: "plus")
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            Section("Placement") {
+                                Button(action: {
+                                    StickyNotesService.shared.setPinAllToDesktop(true)
+                                }) {
+                                    HStack {
+                                        Text("Pin All to Desktop (Home Page)")
+                                        if StickyNotesService.shared.notes.allSatisfy({ $0.isPinnedToDesktop }) && !StickyNotesService.shared.notes.isEmpty {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                                
+                                Button(action: {
+                                    StickyNotesService.shared.setPinAllToDesktop(false)
+                                }) {
+                                    HStack {
+                                        Text("Float All on Top")
+                                        if StickyNotesService.shared.notes.allSatisfy({ !$0.isPinnedToDesktop }) && !StickyNotesService.shared.notes.isEmpty {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            Section("Default Color") {
+                                ForEach(StickyNoteColor.allCases) { color in
+                                    Button(action: {
+                                        StickyNotesService.shared.setDefaultColor(color)
+                                    }) {
+                                        HStack {
+                                            Text(color.title)
+                                            if StickyNotesService.shared.defaultColor == color {
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            Button(action: {
+                                StickyNotesService.shared.bringAllToFront()
+                            }) {
+                                HStack {
+                                    Text("Bring All Notes to Front")
+                                    Image(systemName: "arrow.up.forward.app")
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            Button(action: {
+                                StickyNotesService.shared.deleteAllNotes()
+                            }) {
+                                HStack {
+                                    Text("Delete All Notes (\(StickyNotesService.shared.notes.count))")
+                                    Image(systemName: "trash")
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 3) {
+                                Text(item.subtitle ?? StickyNotesService.shared.statusSubtitle)
+                                    .font(.system(size: 12, weight: item.isOn ? .bold : .medium, design: .rounded))
+                                    .foregroundColor(item.isOn ? Color(red: 1.0, green: 0.82, blue: 0.10) : Color.gray.opacity(0.85))
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 8))
+                                    .foregroundColor(Color.gray.opacity(0.6))
+                            }
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                    }
+                    .contextMenu {
+                        Button(action: {
+                            StickyNotesService.shared.createNote()
+                        }) {
+                            HStack {
+                                Text("New Sticky Note")
+                                Image(systemName: "plus")
+                            }
+                        }
+                        
+                        Divider()
+                        
+                        Button(action: {
+                            StickyNotesService.shared.setPinAllToDesktop(true)
+                        }) {
+                            HStack {
+                                Text("Pin All to Desktop (Home Page)")
+                                Image(systemName: "house.fill")
+                            }
+                        }
+                        
+                        Button(action: {
+                            StickyNotesService.shared.setPinAllToDesktop(false)
+                        }) {
+                            HStack {
+                                Text("Float All on Top")
+                                Image(systemName: "pin.fill")
+                            }
+                        }
+                        
+                        Divider()
+                        
+                        Button(action: {
+                            StickyNotesService.shared.deleteAllNotes()
+                        }) {
+                            HStack {
+                                Text("Delete All Notes")
+                                Image(systemName: "trash")
+                            }
+                        }
+                    }
                 } else if let subtitle = item.subtitle, !subtitle.isEmpty {
                     Text(subtitle)
                         .font(.system(size: 12, weight: .regular))
