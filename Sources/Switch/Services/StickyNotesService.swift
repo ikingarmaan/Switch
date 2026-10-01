@@ -151,6 +151,19 @@ public final class StickyNotePanel: NSPanel {
     
     public override var canBecomeKey: Bool { true }
     public override var canBecomeMain: Bool { true }
+    public override var acceptsFirstResponder: Bool { true }
+    
+    public override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown {
+            if !NSApp.isActive {
+                NSApp.activate(ignoringOtherApps: true)
+            }
+            if !isKeyWindow {
+                makeKeyAndOrderFront(nil)
+            }
+        }
+        super.sendEvent(event)
+    }
 }
 
 // MARK: - Service
@@ -323,11 +336,6 @@ public final class StickyNotesService: ObservableObject, @unchecked Sendable {
         notes[index].color = color
         notes[index].updatedAt = Date()
         saveNotesDebounced()
-        
-        // Re-render the window content
-        if let panel = noteWindows[id] {
-            panel.contentView = NSHostingView(rootView: StickyNoteView(noteId: id))
-        }
     }
     
     public func togglePinToDesktop(id: UUID) {
@@ -435,12 +443,19 @@ public final class StickyNotesService: ObservableObject, @unchecked Sendable {
         
         let panel = StickyNotePanel(
             contentRect: NSRect(origin: origin, size: NSSize(width: currentW, height: currentH)),
-            styleMask: [.borderless, .resizable],
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         
         panel.noteId = note.id
+        panel.titleVisibility = .hidden
+        panel.titlebarAppearsTransparent = true
+        panel.standardWindowButton(.closeButton)?.isHidden = true
+        panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        panel.standardWindowButton(.zoomButton)?.isHidden = true
+        panel.isFloatingPanel = false
+        panel.becomesKeyOnlyIfNeeded = false
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true

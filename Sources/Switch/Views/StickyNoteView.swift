@@ -27,6 +27,10 @@ public struct WindowDragAreaView: NSViewRepresentable {
         public override var mouseDownCanMoveWindow: Bool { true }
         
         public override func mouseDown(with event: NSEvent) {
+            if !NSApp.isActive {
+                NSApp.activate(ignoringOtherApps: true)
+            }
+            window?.makeKeyAndOrderFront(nil)
             window?.performDrag(with: event)
         }
     }
@@ -52,6 +56,10 @@ public struct ResizeGripViewRepresentable: NSViewRepresentable {
         
         public override func mouseDown(with event: NSEvent) {
             guard let window = window else { return }
+            if !NSApp.isActive {
+                NSApp.activate(ignoringOtherApps: true)
+            }
+            window.makeKeyAndOrderFront(nil)
             initialFrame = window.frame
             initialMouseLocation = NSEvent.mouseLocation
         }
@@ -76,116 +84,6 @@ public struct ResizeGripViewRepresentable: NSViewRepresentable {
     }
 }
 
-// MARK: - Native AppKit Text View for Multi-line Note Editing
-public struct StickyNoteTextView: NSViewRepresentable {
-    public var text: String
-    public var textColor: NSColor
-    public var placeholderText: String
-    public var onTextChange: (String) -> Void
-    
-    public init(
-        text: String,
-        textColor: NSColor,
-        placeholderText: String = "Type your note, reminder, or idea...",
-        onTextChange: @escaping (String) -> Void
-    ) {
-        self.text = text
-        self.textColor = textColor
-        self.placeholderText = placeholderText
-        self.onTextChange = onTextChange
-    }
-    
-    public func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-    
-    public func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSScrollView()
-        scrollView.drawsBackground = false
-        scrollView.hasVerticalScroller = true
-        scrollView.hasHorizontalScroller = false
-        scrollView.autohidesScrollers = true
-        scrollView.borderType = .noBorder
-        
-        let textView = CustomStickyNSTextView()
-        textView.delegate = context.coordinator
-        textView.drawsBackground = false
-        textView.backgroundColor = .clear
-        textView.font = NSFont.systemFont(ofSize: 13.5, weight: .regular)
-        textView.textColor = textColor
-        textView.insertionPointColor = textColor
-        textView.isRichText = false
-        textView.allowsUndo = true
-        textView.isAutomaticQuoteSubstitutionEnabled = false
-        textView.isAutomaticDashSubstitutionEnabled = false
-        textView.string = text
-        textView.placeholderText = placeholderText
-        textView.textContainerInset = NSSize(width: 8, height: 4)
-        
-        textView.isVerticallyResizable = true
-        textView.isHorizontallyResizable = false
-        textView.textContainer?.containerSize = NSSize(width: scrollView.contentSize.width, height: CGFloat.greatestFiniteMagnitude)
-        textView.textContainer?.widthTracksTextView = true
-        
-        scrollView.documentView = textView
-        context.coordinator.textView = textView
-        return scrollView
-    }
-    
-    public func updateNSView(_ scrollView: NSScrollView, context: Context) {
-        if let textView = scrollView.documentView as? CustomStickyNSTextView {
-            if textView.string != text && !context.coordinator.isEditing {
-                textView.string = text
-            }
-            textView.textColor = textColor
-            textView.insertionPointColor = textColor
-            textView.placeholderText = placeholderText
-            textView.needsDisplay = true
-        }
-    }
-    
-    public final class Coordinator: NSObject, NSTextViewDelegate {
-        var parent: StickyNoteTextView
-        weak var textView: CustomStickyNSTextView?
-        var isEditing = false
-        
-        init(_ parent: StickyNoteTextView) {
-            self.parent = parent
-        }
-        
-        public func textDidBeginEditing(_ notification: Notification) {
-            isEditing = true
-        }
-        
-        public func textDidChange(_ notification: Notification) {
-            guard let tv = textView else { return }
-            parent.onTextChange(tv.string)
-        }
-        
-        public func textDidEndEditing(_ notification: Notification) {
-            isEditing = false
-            guard let tv = textView else { return }
-            parent.onTextChange(tv.string)
-        }
-    }
-}
-
-public final class CustomStickyNSTextView: NSTextView {
-    public var placeholderText: String = ""
-    
-    public override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        if string.isEmpty && !placeholderText.isEmpty {
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: font ?? NSFont.systemFont(ofSize: 13.5),
-                .foregroundColor: (textColor ?? NSColor.textColor).withAlphaComponent(0.42)
-            ]
-            let rect = NSRect(x: 12, y: 4, width: bounds.width - 24, height: bounds.height)
-            placeholderText.draw(in: rect, withAttributes: attrs)
-        }
-    }
-}
-
 // MARK: - Colorful Sticky Note View
 public struct StickyNoteView: View {
     public let noteId: UUID
@@ -203,7 +101,7 @@ public struct StickyNoteView: View {
     public var body: some View {
         if let note = note {
             ZStack {
-                // Card Background Gradient & Glass Highlight
+                // Card Background Gradient & Highlight
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(
                         LinearGradient(
@@ -226,18 +124,37 @@ public struct StickyNoteView: View {
                         Divider()
                             .background(note.color.borderColor.opacity(0.6))
                         
-                        // Text Area
-                        StickyNoteTextView(
-                            text: note.content,
-                            textColor: note.color.nsTextColor,
-                            placeholderText: "Type your note, reminder, or idea...",
-                            onTextChange: { newText in
-                                service.updateNoteContent(id: note.id, content: newText)
+                        // Native Multiline Text Editor
+                        ZStack(alignment: .topLeading) {
+                            if note.content.isEmpty {
+                                Text("Type your note, reminder, or idea...")
+                                    .font(.system(size: 13.5, weight: .regular, design: .rounded))
+                                    .foregroundColor(note.color.textColor.opacity(0.42))
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 10)
+                                    .allowsHitTesting(false)
                             }
-                        )
-                        .padding(.horizontal, 4)
-                        .padding(.top, 4)
-                        .padding(.bottom, 2)
+                            
+                            TextEditor(text: Binding(
+                                get: { note.content },
+                                set: { newText in
+                                    service.updateNoteContent(id: note.id, content: newText)
+                                }
+                            ))
+                            .font(.system(size: 13.5, weight: .regular, design: .rounded))
+                            .foregroundColor(note.color.textColor)
+                            .accentColor(note.color.textColor)
+                            .scrollContentBackground(.hidden)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 6)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            if !NSApp.isActive {
+                                NSApp.activate(ignoringOtherApps: true)
+                            }
+                        }
                         
                         // Footer Bar (Time & Resize handle)
                         footerBar(note: note)
