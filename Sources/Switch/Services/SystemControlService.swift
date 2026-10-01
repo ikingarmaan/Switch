@@ -379,65 +379,92 @@ public final class SystemControlService: @unchecked Sendable {
         }
     }
     
-    // MARK: - Menu Bar AutoHide Helper
+    // MARK: - Menu Bar AutoHide Helper (SkyLight CGS Private APIs)
     
+    private typealias CGSMainConnectionID_t = @convention(c) () -> Int32
+    private typealias CGSSetMenuBarAutohideEnabled_t = @convention(c) (Int32, Bool) -> Void
+    private typealias CGSGetMenuBarAutohideEnabled_t = @convention(c) (Int32, UnsafeMutablePointer<Bool>) -> Void
+
+    private static let skyLightHandle: UnsafeMutableRawPointer? = {
+        return dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_NOW)
+    }()
+    
+    private static let cgsMainConnectionID: CGSMainConnectionID_t? = {
+        guard let handle = skyLightHandle, let sym = dlsym(handle, "CGSMainConnectionID") else { return nil }
+        return unsafeBitCast(sym, to: CGSMainConnectionID_t.self)
+    }()
+    
+    private static let cgsSetMenuBarAutohide: CGSSetMenuBarAutohideEnabled_t? = {
+        guard let handle = skyLightHandle, let sym = dlsym(handle, "CGSSetMenuBarAutohideEnabled") else { return nil }
+        return unsafeBitCast(sym, to: CGSSetMenuBarAutohideEnabled_t.self)
+    }()
+    
+    private static let cgsGetMenuBarAutohide: CGSGetMenuBarAutohideEnabled_t? = {
+        guard let handle = skyLightHandle, let sym = dlsym(handle, "CGSGetMenuBarAutohideEnabled") else { return nil }
+        return unsafeBitCast(sym, to: CGSGetMenuBarAutohideEnabled_t.self)
+    }()
+
     private func getMenuBarAutoHide() -> Bool {
-        if !Thread.isMainThread {
-            return DispatchQueue.main.sync { [weak self] in
-                return self?.getMenuBarAutoHide() ?? false
+        if let getFunc = Self.cgsGetMenuBarAutohide, let connFunc = Self.cgsMainConnectionID {
+            var isHidden = false
+            getFunc(connFunc(), &isHidden)
+            return isHidden
+        }
+        
+        if let val = CFPreferencesCopyAppValue("_HIHideMenuBar" as CFString, kCFPreferencesAnyApplication) {
+            if let boolVal = val as? Bool {
+                return boolVal
+            } else if let numVal = val as? NSNumber {
+                return numVal.boolValue
             }
         }
         
-        let script = "tell application \"System Events\" to tell dock preferences to get autohide menu bar"
-        if let appleScript = NSAppleScript(source: script) {
-            var error: NSDictionary?
-            let descriptor = appleScript.executeAndReturnError(&error)
-            if error == nil {
-                return descriptor.booleanValue
-            }
-        }
         let val = Shell.run("defaults read NSGlobalDomain _HIHideMenuBar 2>/dev/null")
         return val == "1" || val.lowercased() == "true"
     }
 
     private func setMenuBarAutoHide(_ isOn: Bool) {
-        if !Thread.isMainThread {
-            DispatchQueue.main.sync { [weak self] in
-                self?.setMenuBarAutoHide(isOn)
-            }
-            return
+        // 1. Immediately notify WindowServer via SkyLight
+        if let setFunc = Self.cgsSetMenuBarAutohide, let connFunc = Self.cgsMainConnectionID {
+            setFunc(connFunc(), isOn)
         }
         
-        let targetDesc = NSAppleEventDescriptor(bundleIdentifier: "com.apple.systemevents")
-        _ = AEDeterminePermissionToAutomateTarget(
-            targetDesc.aeDesc,
-            OSType(typeWildCard),
-            OSType(typeWildCard),
+        // 2. Broadcast distributed notifications
+        DistributedNotificationCenter.default().postNotificationName(
+            NSNotification.Name("AppleInterfaceMenuBarHidingChangedNotification"),
+            object: nil,
+            userInfo: nil,
+            deliverImmediately: true
+        )
+        DistributedNotificationCenter.default().postNotificationName(
+            NSNotification.Name("AppleInterfaceFullScreenMenuBarVisibilityChangedNotification"),
+            object: nil,
+            userInfo: nil,
+            deliverImmediately: true
+        )
+        CFNotificationCenterPostNotification(
+            CFNotificationCenterGetDistributedCenter(),
+            CFNotificationName("AppleInterfaceMenuBarHidingChangedNotification" as CFString),
+            nil,
+            nil,
             true
         )
         
-        let script = "tell application \"System Events\" to tell dock preferences to set autohide menu bar to \(isOn)"
-        if let appleScript = NSAppleScript(source: script) {
-            var error: NSDictionary?
-            appleScript.executeAndReturnError(&error)
-            if let err = error {
-                print("AppleScript error for autohideMenuBar: \(err)")
-                if let code = err["NSAppleScriptErrorNumber"] as? Int, code == -1743 {
-                    let alert = NSAlert()
-                    alert.messageText = "Automation Permission Required"
-                    alert.informativeText = "Switch requires permission to control System Events in order to automatically hide and show the menu bar.\n\nPlease enable System Events under Switch in System Settings > Privacy & Security > Automation."
-                    alert.addButton(withTitle: "Open System Settings")
-                    alert.addButton(withTitle: "Cancel")
-                    if alert.runModal() == .alertFirstButtonReturn {
-                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation") {
-                            NSWorkspace.shared.open(url)
-                        }
-                    }
-                }
-            }
-        }
+        // 3. Persist in preferences
+        let hideVal: CFPropertyList = (isOn ? kCFBooleanTrue : kCFBooleanFalse) as CFPropertyList
+        let fullscreenVal: CFPropertyList = (!isOn ? kCFBooleanTrue : kCFBooleanFalse) as CFPropertyList
+        let ccVal: CFPropertyList = (isOn ? 1 : 0) as CFNumber
+        
+        CFPreferencesSetValue("_HIHideMenuBar" as CFString, hideVal, kCFPreferencesAnyApplication, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+        CFPreferencesSetValue("AppleMenuBarVisibleInFullscreen" as CFString, fullscreenVal, kCFPreferencesAnyApplication, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+        CFPreferencesSetValue("AutoHideMenuBarOption" as CFString, ccVal, "com.apple.controlcenter" as CFString, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+        
+        CFPreferencesSynchronize(kCFPreferencesAnyApplication, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+        CFPreferencesSynchronize("com.apple.controlcenter" as CFString, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+        
         _ = Shell.run("defaults write NSGlobalDomain _HIHideMenuBar -bool \(isOn)")
         _ = Shell.run("defaults write .GlobalPreferences AppleMenuBarVisibleInFullscreen -bool \(!isOn)")
+        _ = Shell.run("defaults write com.apple.controlcenter AutoHideMenuBarOption -int \(isOn ? 1 : 0)")
     }
     
     public func triggerAction(for type: SwitchType) {
