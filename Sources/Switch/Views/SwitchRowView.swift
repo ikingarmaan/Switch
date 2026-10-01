@@ -1414,6 +1414,63 @@ public struct SwitchRowView: View {
                             }
                         }
                     }
+                } else if item.type == .autohideMenuBar {
+                    Menu {
+                        Section("Menu Bar Behavior") {
+                            ForEach(MenuBarAutoHideMode.allCases) { mode in
+                                Button(action: {
+                                    SystemControlService.shared.setMenuBarAutoHideMode(mode)
+                                }) {
+                                    HStack {
+                                        Text(mode.title)
+                                        if SystemControlService.shared.currentMenuBarAutoHideMode == mode {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        Divider()
+                        
+                        Button(action: {
+                            if let url = URL(string: "x-apple.systempreferences:com.apple.ControlCenter-Settings.extension") {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }) {
+                            HStack {
+                                Text("Desktop & Dock Settings...")
+                                Image(systemName: "gearshape")
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 3) {
+                            Text(item.subtitle ?? SystemControlService.shared.currentMenuBarAutoHideMode.shortLabel)
+                                .font(.system(size: 12, weight: item.isOn ? .bold : .medium, design: .rounded))
+                                .foregroundColor(item.isOn ? Color(red: 0.38, green: 0.75, blue: 0.98) : Color.gray.opacity(0.85))
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 8))
+                                .foregroundColor(Color.gray.opacity(0.6))
+                        }
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .contextMenu {
+                        Section("Menu Bar Behavior") {
+                            ForEach(MenuBarAutoHideMode.allCases) { mode in
+                                Button(action: {
+                                    SystemControlService.shared.setMenuBarAutoHideMode(mode)
+                                }) {
+                                    HStack {
+                                        Text(mode.title)
+                                        if SystemControlService.shared.currentMenuBarAutoHideMode == mode {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 } else if let subtitle = item.subtitle, !subtitle.isEmpty {
                     Text(subtitle)
                         .font(.system(size: 12, weight: .regular))

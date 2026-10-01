@@ -414,6 +414,19 @@ public final class SwitchListViewModel: ObservableObject {
                 self.switches[index].subtitle = s.statusSubtitle
             }
             .store(in: &cancellables)
+            
+        NotificationCenter.default.publisher(for: .menuBarAutoHideModeDidChange)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self = self,
+                      let index = self.switches.firstIndex(where: { $0.type == .autohideMenuBar })
+                else { return }
+                let status = SystemControlService.shared.getStatus(for: .autohideMenuBar)
+                self.switches[index].isOn = status.isOn
+                self.switches[index].isLoading = false
+                self.switches[index].subtitle = status.subtitle
+            }
+            .store(in: &cancellables)
     }
     
     private func setupSwitches() {

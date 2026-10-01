@@ -108,8 +108,66 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+public enum MenuBarAutoHideMode: String, CaseIterable, Identifiable, Sendable {
+    case fullScreenOnly = "fullScreenOnly"
+    case always = "always"
+    case desktopOnly = "desktopOnly"
+    case never = "never"
+    
+    public var id: String { rawValue }
+    
+    public var title: String {
+        switch self {
+        case .fullScreenOnly: return "In Full Screen Only"
+        case .always: return "Always"
+        case .desktopOnly: return "On Desktop Only"
+        case .never: return "Never"
+        }
+    }
+    
+    public var shortLabel: String {
+        switch self {
+        case .fullScreenOnly: return "Full Screen"
+        case .always: return "Always"
+        case .desktopOnly: return "Desktop"
+        case .never: return "Never"
+        }
+    }
+    
+    public var hideOnDesktop: Bool {
+        switch self {
+        case .always, .desktopOnly: return true
+        case .fullScreenOnly, .never: return false
+        }
+    }
+    
+    public var visibleInFullscreen: Bool {
+        switch self {
+        case .fullScreenOnly, .always: return false
+        case .never, .desktopOnly: return true
+        }
+    }
+    
+    public var controlCenterOption: Int {
+        switch self {
+        case .never: return 0
+        case .always: return 1
+        case .desktopOnly: return 2
+        case .fullScreenOnly: return 3
+        }
+    }
+}
+
+public extension Notification.Name {
+    static let menuBarAutoHideModeDidChange = Notification.Name("menuBarAutoHideModeDidChange")
+}
+
 public final class SystemControlService: @unchecked Sendable {
     public static let shared = SystemControlService()
+    
+    public var currentMenuBarAutoHideMode: MenuBarAutoHideMode {
+        getMenuBarAutoHideMode()
+    }
     
     private init() {}
     
@@ -143,7 +201,8 @@ public final class SystemControlService: @unchecked Sendable {
             return (val == "1" || val.lowercased() == "true", nil)
             
         case .autohideMenuBar:
-            return (getMenuBarAutoHide(), nil)
+            let mode = getMenuBarAutoHideMode()
+            return (mode.hideOnDesktop, mode.shortLabel)
             
         case .hiddenFiles:
             let val = Shell.run("defaults read com.apple.Finder AppleShowAllFiles 2>/dev/null")
@@ -404,32 +463,84 @@ public final class SystemControlService: @unchecked Sendable {
         return unsafeBitCast(sym, to: CGSGetMenuBarAutohideEnabled_t.self)
     }()
 
-    private func getMenuBarAutoHide() -> Bool {
+    public func getMenuBarAutoHideMode() -> MenuBarAutoHideMode {
+        let hideOnDesktop: Bool
         if let getFunc = Self.cgsGetMenuBarAutohide, let connFunc = Self.cgsMainConnectionID {
             var isHidden = false
             getFunc(connFunc(), &isHidden)
-            return isHidden
-        }
-        
-        if let val = CFPreferencesCopyAppValue("_HIHideMenuBar" as CFString, kCFPreferencesAnyApplication) {
+            hideOnDesktop = isHidden
+        } else if let val = CFPreferencesCopyAppValue("_HIHideMenuBar" as CFString, kCFPreferencesAnyApplication) {
             if let boolVal = val as? Bool {
-                return boolVal
+                hideOnDesktop = boolVal
             } else if let numVal = val as? NSNumber {
-                return numVal.boolValue
+                hideOnDesktop = numVal.boolValue
+            } else {
+                hideOnDesktop = false
             }
+        } else {
+            let val = Shell.run("defaults read NSGlobalDomain _HIHideMenuBar 2>/dev/null")
+            hideOnDesktop = (val == "1" || val.lowercased() == "true")
         }
         
-        let val = Shell.run("defaults read NSGlobalDomain _HIHideMenuBar 2>/dev/null")
-        return val == "1" || val.lowercased() == "true"
+        let visibleInFullscreen: Bool
+        if let val = CFPreferencesCopyAppValue("AppleMenuBarVisibleInFullscreen" as CFString, kCFPreferencesAnyApplication) {
+            if let boolVal = val as? Bool {
+                visibleInFullscreen = boolVal
+            } else if let numVal = val as? NSNumber {
+                visibleInFullscreen = numVal.boolValue
+            } else {
+                visibleInFullscreen = false
+            }
+        } else {
+            let val = Shell.run("defaults read NSGlobalDomain AppleMenuBarVisibleInFullscreen 2>/dev/null")
+            visibleInFullscreen = (val == "1" || val.lowercased() == "true")
+        }
+        
+        switch (hideOnDesktop, visibleInFullscreen) {
+        case (true, false):
+            return .always
+        case (true, true):
+            return .desktopOnly
+        case (false, false):
+            return .fullScreenOnly
+        case (false, true):
+            return .never
+        }
     }
 
-    private func setMenuBarAutoHide(_ isOn: Bool) {
+    private func getMenuBarAutoHide() -> Bool {
+        return getMenuBarAutoHideMode().hideOnDesktop
+    }
+
+    public func setMenuBarAutoHideMode(_ mode: MenuBarAutoHideMode) {
+        let hideOnDesktop = mode.hideOnDesktop
+        let visibleInFullscreen = mode.visibleInFullscreen
+        let ccOption = mode.controlCenterOption
+        
         // 1. Immediately notify WindowServer via SkyLight
         if let setFunc = Self.cgsSetMenuBarAutohide, let connFunc = Self.cgsMainConnectionID {
-            setFunc(connFunc(), isOn)
+            setFunc(connFunc(), hideOnDesktop)
         }
         
-        // 2. Broadcast distributed notifications
+        // 2. Persist in preferences
+        let hideVal: CFPropertyList = (hideOnDesktop ? kCFBooleanTrue : kCFBooleanFalse) as CFPropertyList
+        let fullscreenVal: CFPropertyList = (visibleInFullscreen ? kCFBooleanTrue : kCFBooleanFalse) as CFPropertyList
+        let ccVal: CFPropertyList = ccOption as CFNumber
+        
+        CFPreferencesSetValue("_HIHideMenuBar" as CFString, hideVal, kCFPreferencesAnyApplication, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+        CFPreferencesSetValue("AppleMenuBarVisibleInFullscreen" as CFString, fullscreenVal, kCFPreferencesAnyApplication, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+        CFPreferencesSetValue("AutoHideMenuBarOption" as CFString, ccVal, "com.apple.controlcenter" as CFString, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+        
+        CFPreferencesSynchronize(kCFPreferencesAnyApplication, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+        CFPreferencesSynchronize("com.apple.controlcenter" as CFString, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+        
+        _ = Shell.run("defaults write NSGlobalDomain _HIHideMenuBar -bool \(hideOnDesktop)")
+        _ = Shell.run("defaults write .GlobalPreferences _HIHideMenuBar -bool \(hideOnDesktop)")
+        _ = Shell.run("defaults write NSGlobalDomain AppleMenuBarVisibleInFullscreen -bool \(visibleInFullscreen)")
+        _ = Shell.run("defaults write .GlobalPreferences AppleMenuBarVisibleInFullscreen -bool \(visibleInFullscreen)")
+        _ = Shell.run("defaults write com.apple.controlcenter AutoHideMenuBarOption -int \(ccOption)")
+        
+        // 3. Broadcast distributed notifications
         DistributedNotificationCenter.default().postNotificationName(
             NSNotification.Name("AppleInterfaceMenuBarHidingChangedNotification"),
             object: nil,
@@ -449,22 +560,24 @@ public final class SystemControlService: @unchecked Sendable {
             nil,
             true
         )
+        CFNotificationCenterPostNotification(
+            CFNotificationCenterGetDistributedCenter(),
+            CFNotificationName("AppleInterfaceFullScreenMenuBarVisibilityChangedNotification" as CFString),
+            nil,
+            nil,
+            true
+        )
         
-        // 3. Persist in preferences
-        let hideVal: CFPropertyList = (isOn ? kCFBooleanTrue : kCFBooleanFalse) as CFPropertyList
-        let fullscreenVal: CFPropertyList = (!isOn ? kCFBooleanTrue : kCFBooleanFalse) as CFPropertyList
-        let ccVal: CFPropertyList = (isOn ? 1 : 0) as CFNumber
-        
-        CFPreferencesSetValue("_HIHideMenuBar" as CFString, hideVal, kCFPreferencesAnyApplication, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
-        CFPreferencesSetValue("AppleMenuBarVisibleInFullscreen" as CFString, fullscreenVal, kCFPreferencesAnyApplication, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
-        CFPreferencesSetValue("AutoHideMenuBarOption" as CFString, ccVal, "com.apple.controlcenter" as CFString, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
-        
-        CFPreferencesSynchronize(kCFPreferencesAnyApplication, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
-        CFPreferencesSynchronize("com.apple.controlcenter" as CFString, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
-        
-        _ = Shell.run("defaults write NSGlobalDomain _HIHideMenuBar -bool \(isOn)")
-        _ = Shell.run("defaults write .GlobalPreferences AppleMenuBarVisibleInFullscreen -bool \(!isOn)")
-        _ = Shell.run("defaults write com.apple.controlcenter AutoHideMenuBarOption -int \(isOn ? 1 : 0)")
+        // 4. Notify app listeners
+        NotificationCenter.default.post(name: .menuBarAutoHideModeDidChange, object: mode)
+    }
+
+    private func setMenuBarAutoHide(_ isOn: Bool) {
+        if isOn {
+            setMenuBarAutoHideMode(.always)
+        } else {
+            setMenuBarAutoHideMode(.fullScreenOnly)
+        }
     }
     
     public func triggerAction(for type: SwitchType) {
