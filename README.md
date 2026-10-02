@@ -62,6 +62,7 @@ Download the pre-compiled, codesigned app bundle directly from GitHub Releases:
 | ☕️ **Amphetamine & Keep Awake** | Prevents sleep and display sleep indefinitely or for set durations (15m, 30m, 1h, 2h, 4h). |
 | 🐭 **Auto Mouse Movement** | Simulates cursor movements with **configurable tile travel distances** (2 tiles Micro, 5 tiles Subtle, 10 tiles Standard, 25 tiles Medium, 50 tiles Wide, 100 tiles Wander) and customizable timers. |
 | 📜 **Auto Scroll Up & Down** | Automatically scrolls any active window/feed up and down with **Bounce Mode**, **Continuous Down**, or **Continuous Up**, plus customizable speed (Slow, Normal, Fast) and turnaround range. |
+| 🔄 **Auto Tab Switcher** | Automatically rotates browser and app tabs at **customizable intervals (default: every 1 minute)**. Perfect for monitoring dashboards, kiosks, status displays, presentations, or hands-free browsing across Chrome, Safari, Arc, Firefox, and macOS apps with forward/reverse direction and display awake retention. |
 | 📝 **Colorful Sticky Notes** | Beautiful, vibrantly styled desktop stickies with 7 color themes, **interactive checkboxes (To-Do Checklist mode)** with strikethrough & progress, **text alignment (Left, Center, Right)**, font sizes (S/M/L), bullet lists, instant auto-save, collapsible cards, bottom-right resize grip, and a **Pin to Desktop (Home Page)** vs **Float on Top** mode! |
 | 🛡️ **Self Control & Recovery** | Comprehensive self-mastery companion: **Live precision streak counter** (days, hours, mins, secs), **90-Day Neuroplasticity Reboot Roadmap**, **Urge SOS Center** with guided Box Breathing pacer & sensory grounding, **1-click Mac-wide Adult Content Blocker**, daily HALT trigger journal, and unshakeable personal motivation anchors. |
 
@@ -69,9 +70,10 @@ Download the pre-compiled, codesigned app bundle directly from GitHub Releases:
 
 ## 📋 Complete Switches Catalog
 
-Switch packs over **26 native macOS switches** into an ultra-responsive, beautiful interface:
+Switch packs over **27 native macOS switches** into an ultra-responsive, beautiful interface:
 
 ### 🚀 Productivity & Workflow
+- **Auto Tab Switcher**: Hands-free tab carousel that auto-switches browser and app tabs every minute (or 10s, 30s, 1m, 2m, 5m, 10m). Supports forward/reverse direction, customizable shortcut styles (Control+Tab, ⌘⌥→, ⌘⇧]), screen-awake retention, live countdown ticker, and audio feedback.
 - **Colorful Sticky Notes**: Multi-theme desktop and floating stickies with interactive checkboxes, strikethrough to-do items, text alignment (Left, Center, Right), font sizes, interactive color palette, desktop wallpaper pinning, instant copy, and auto-save.
 - **Clipboard History**: Saves up to 50 copied text and image items. Triggered via global shortcut `F9`.
 - **Auto Scroll (Up & Down)**: Automated hands-free scrolling with bounce turnaround, speed controls, and session timers.

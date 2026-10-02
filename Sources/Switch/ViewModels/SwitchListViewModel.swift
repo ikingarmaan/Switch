@@ -391,6 +391,34 @@ public final class SwitchListViewModel: ObservableObject {
             }
             .store(in: &cancellables)
             
+        NotificationCenter.default.publisher(for: .autoTabSwitchStateDidChange)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] notif in
+                guard let self = self,
+                      let index = self.switches.firstIndex(where: { $0.type == .autoTabSwitch })
+                else { return }
+                let s = AutoTabSwitchService.shared
+                let isRunning = notif.object as? Bool ?? s.isActive
+                self.switches[index].isOn = isRunning
+                self.switches[index].isLoading = false
+                self.switches[index].subtitle = s.statusSubtitle
+            }
+            .store(in: &cancellables)
+            
+        NotificationCenter.default.publisher(for: .autoTabSwitchTick)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] notif in
+                guard let self = self,
+                      let index = self.switches.firstIndex(where: { $0.type == .autoTabSwitch })
+                else { return }
+                if let text = notif.object as? String {
+                    self.switches[index].subtitle = text
+                } else {
+                    self.switches[index].subtitle = AutoTabSwitchService.shared.statusSubtitle
+                }
+            }
+            .store(in: &cancellables)
+            
         NotificationCenter.default.publisher(for: .stickyNotesStateDidChange)
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
@@ -472,6 +500,7 @@ public final class SwitchListViewModel: ObservableObject {
             .amphetamine,
             .mouseJiggler,
             .autoScroll,
+            .autoTabSwitch,
             .googlyEyes,
             .volumeBoost,
             .grammarCoach,
