@@ -332,6 +332,17 @@ public struct SwitchRowView: View {
                             Divider()
                             
                             Button(action: {
+                                AutoTabSwitchService.shared.requestAccessibilityPermission(forcePrompt: true)
+                            }) {
+                                HStack {
+                                    Text("Accessibility Permission...")
+                                    Image(systemName: AutoTabSwitchService.shared.isAccessibilityGranted ? "checkmark.shield.fill" : "exclamationmark.shield")
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            Button(action: {
                                 AutoTabSwitchService.shared.switchTabNow()
                             }) {
                                 HStack {
@@ -365,6 +376,17 @@ public struct SwitchRowView: View {
                                         }
                                     }
                                 }
+                            }
+                        }
+                        
+                        Divider()
+                        
+                        Button(action: {
+                            AutoTabSwitchService.shared.requestAccessibilityPermission(forcePrompt: true)
+                        }) {
+                            HStack {
+                                Text("Accessibility Permission...")
+                                Image(systemName: AutoTabSwitchService.shared.isAccessibilityGranted ? "checkmark.shield.fill" : "exclamationmark.shield")
                             }
                         }
                         
