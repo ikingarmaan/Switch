@@ -63,6 +63,7 @@ Download the pre-compiled, codesigned app bundle directly from GitHub Releases:
 | 🐭 **Auto Mouse Movement** | Simulates cursor movements with **configurable tile travel distances** (2 tiles Micro, 5 tiles Subtle, 10 tiles Standard, 25 tiles Medium, 50 tiles Wide, 100 tiles Wander) and customizable timers. |
 | 📜 **Auto Scroll Up & Down** | Automatically scrolls any active window/feed up and down with **Bounce Mode**, **Continuous Down**, or **Continuous Up**, plus customizable speed (Slow, Normal, Fast) and turnaround range. |
 | 📝 **Colorful Sticky Notes** | Beautiful, vibrantly styled desktop stickies with 7 color themes, **interactive checkboxes (To-Do Checklist mode)** with strikethrough & progress, **text alignment (Left, Center, Right)**, font sizes (S/M/L), bullet lists, instant auto-save, collapsible cards, bottom-right resize grip, and a **Pin to Desktop (Home Page)** vs **Float on Top** mode! |
+| 🛡️ **Self Control & Recovery** | Comprehensive self-mastery companion: **Live precision streak counter** (days, hours, mins, secs), **90-Day Neuroplasticity Reboot Roadmap**, **Urge SOS Center** with guided Box Breathing pacer & sensory grounding, **1-click Mac-wide Adult Content Blocker**, daily HALT trigger journal, and unshakeable personal motivation anchors. |
 
 ---
 
@@ -79,6 +80,7 @@ Switch packs over **26 native macOS switches** into an ultra-responsive, beautif
 - **Folder Tidy**: Automated cleanup for Desktop and Downloads with content-aware categorization.
 - **Loom Screen Recorder**: Full desktop recording + floating webcam bubble with 1-click export.
 - **Grammar Coach**: Instant AI-assisted text polishing in any app.
+- **Self Control & Recovery Tracker**: Built-in sobriety clock, 90-day neuroplasticity dopamine recovery roadmap, live Box Breathing urge surfer, HALT trigger journal, and 1-click system adult website blocker (`switch://control`).
 
 ### 🛡️ Network & Privacy
 - **AdBlock DNS (AdGuard)**: Blocks banner ads, video ads, and trackers across all apps and browsers.

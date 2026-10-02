@@ -31,6 +31,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
     case clipboardManager = "clipboardManager"
     case autoScroll = "autoScroll"
     case stickyNotes = "stickyNotes"
+    case selfControl = "selfControl"
     
     public var id: String { rawValue }
     
@@ -63,6 +64,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .clipboardManager: return "Clipboard History"
         case .autoScroll: return "Auto Scroll"
         case .stickyNotes: return "Sticky Notes"
+        case .selfControl: return "Self Control & Recovery"
         }
     }
     
@@ -95,6 +97,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .clipboardManager: return "doc.on.clipboard.fill"
         case .autoScroll: return "arrow.up.and.down.circle.fill"
         case .stickyNotes: return "note.text"
+        case .selfControl: return "shield.checkered"
         }
     }
     
@@ -288,6 +291,10 @@ public final class SystemControlService: @unchecked Sendable {
         case .stickyNotes:
             let notes = StickyNotesService.shared
             return (notes.isVisible, notes.statusSubtitle)
+            
+        case .selfControl:
+            let sc = SelfControlService.shared
+            return (sc.isShieldActive, sc.statusSubtitle)
         }
     }
     
@@ -434,6 +441,11 @@ public final class SystemControlService: @unchecked Sendable {
         case .stickyNotes:
             DispatchQueue.main.async {
                 StickyNotesService.shared.setVisibility(isOn)
+            }
+            
+        case .selfControl:
+            DispatchQueue.main.async {
+                SelfControlService.shared.setShield(isOn)
             }
         }
     }
@@ -619,6 +631,10 @@ public final class SystemControlService: @unchecked Sendable {
         case .clipboardManager:
             DispatchQueue.main.async {
                 ClipboardService.shared.toggleWindow()
+            }
+        case .selfControl:
+            DispatchQueue.main.async {
+                SelfControlWindowManager.shared.showWindow()
             }
         default:
             break

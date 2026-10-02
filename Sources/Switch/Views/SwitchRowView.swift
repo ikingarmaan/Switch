@@ -1414,6 +1414,81 @@ public struct SwitchRowView: View {
                             }
                         }
                     }
+                } else if item.type == .selfControl {
+                    HStack(spacing: 6) {
+                        Button(action: {
+                            SelfControlWindowManager.shared.showWindow()
+                        }) {
+                            Image(systemName: "macwindow")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(Color(red: 0.28, green: 0.85, blue: 0.56))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Open Self-Control & Recovery Tracker")
+                        
+                        Menu {
+                            Button(action: {
+                                SelfControlWindowManager.shared.showWindow()
+                            }) {
+                                HStack {
+                                    Text("Open Recovery Tracker")
+                                    Image(systemName: "shield.checkered")
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            Button(action: {
+                                SelfControlService.shared.logUrgeVictory(trigger: "Menu Victory")
+                            }) {
+                                HStack {
+                                    Text("Log Resisted Urge (+1 Victory)")
+                                    Image(systemName: "checkmark.seal.fill")
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            Button(action: {
+                                SelfControlService.shared.toggleShield()
+                            }) {
+                                HStack {
+                                    Text(SelfControlService.shared.isShieldActive ? "Disable Family Blocker" : "Enable Family Blocker")
+                                    Image(systemName: SelfControlService.shared.isShieldActive ? "shield.slash" : "shield.fill")
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 3) {
+                                Text(item.subtitle ?? SelfControlService.shared.statusSubtitle)
+                                    .font(.system(size: 12, weight: item.isOn ? .bold : .medium, design: .rounded))
+                                    .foregroundColor(item.isOn ? Color(red: 0.28, green: 0.85, blue: 0.56) : Color.gray.opacity(0.85))
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 8))
+                                    .foregroundColor(Color.gray.opacity(0.6))
+                            }
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                    }
+                    .contextMenu {
+                        Button(action: {
+                            SelfControlWindowManager.shared.showWindow()
+                        }) {
+                            HStack {
+                                Text("Open Recovery Tracker")
+                                Image(systemName: "shield.checkered")
+                            }
+                        }
+                        
+                        Button(action: {
+                            SelfControlService.shared.logUrgeVictory(trigger: "Context Menu Victory")
+                        }) {
+                            HStack {
+                                Text("Log Resisted Urge (+1 Victory)")
+                                Image(systemName: "checkmark.seal.fill")
+                            }
+                        }
+                    }
                 } else if item.type == .autohideMenuBar {
                     Menu {
                         Section("Menu Bar Behavior") {

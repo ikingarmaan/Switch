@@ -47,6 +47,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = KnockScreenshotService.shared
         _ = ClipboardService.shared
         _ = StickyNotesService.shared
+        _ = SelfControlService.shared
         
         setupPopover()
         
@@ -99,8 +100,11 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     
     public func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
-            if url.host == "clipboard" || url.path.contains("clipboard") {
+            let host = (url.host ?? url.path).lowercased()
+            if host.contains("clipboard") {
                 ClipboardService.shared.toggleWindow()
+            } else if host.contains("control") || host.contains("selfcontrol") || host.contains("clarity") || host.contains("recovery") {
+                SelfControlWindowManager.shared.showWindow()
             } else {
                 if let button = statusItem?.button {
                     showPopover(button)
