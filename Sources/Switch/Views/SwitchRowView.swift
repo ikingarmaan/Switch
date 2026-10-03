@@ -544,35 +544,32 @@ public struct SwitchRowView: View {
                         .help("Open Grammar Typing Box (Formal & Casual Polishing)")
                         
                         Menu {
-                            Button(action: {
-                                GrammarCoachService.shared.setStyle(.formal)
-                            }) {
-                                HStack {
-                                    Text("👔 Formal Writing")
-                                    if GrammarCoachService.shared.currentStyle == .formal {
-                                        Image(systemName: "checkmark")
+                            Section("Writing Mode") {
+                                ForEach(WritingStyle.allCases) { style in
+                                    Button(action: {
+                                        GrammarCoachService.shared.setStyle(style)
+                                    }) {
+                                        HStack {
+                                            Text(style.badge)
+                                            if GrammarCoachService.shared.currentStyle == style {
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
                                     }
                                 }
                             }
-                            Button(action: {
-                                GrammarCoachService.shared.setStyle(.casual)
-                            }) {
-                                HStack {
-                                    Text("☕ Casual Writing")
-                                    if GrammarCoachService.shared.currentStyle == .casual {
-                                        Image(systemName: "checkmark")
-                                    }
-                                }
-                            }
+                            
                             Divider()
+                            
                             Button(action: {
                                 GrammarCoachService.shared.showTypingBox()
                             }) {
                                 HStack {
-                                    Text("Open Typing Box...")
-                                    Image(systemName: "macwindow")
+                                    Text("Open Grammar & AI Box...")
+                                    Image(systemName: "character.textbox")
                                 }
                             }
+                            
                             if !GrammarCoachService.shared.isAccessibilityGranted {
                                 Divider()
                                 Button(action: {
@@ -586,9 +583,9 @@ public struct SwitchRowView: View {
                             }
                         } label: {
                             HStack(spacing: 3) {
-                                Text(item.isOn ? (GrammarCoachService.shared.currentStyle == .formal ? "Formal" : "Casual") : "Off")
+                                Text(item.isOn ? GrammarCoachService.shared.currentStyle.rawValue : "Off")
                                     .font(.system(size: 12, weight: item.isOn ? .bold : .regular, design: .rounded))
-                                    .foregroundColor(item.isOn ? (GrammarCoachService.shared.currentStyle == .formal ? Color(red: 0.38, green: 0.75, blue: 0.98) : Color(red: 0.95, green: 0.65, blue: 0.25)) : Color.gray.opacity(0.85))
+                                    .foregroundColor(item.isOn ? Color(red: 0.38, green: 0.75, blue: 0.98) : Color.gray.opacity(0.85))
                                 Image(systemName: "chevron.down")
                                     .font(.system(size: 8))
                                     .foregroundColor(Color.gray.opacity(0.6))

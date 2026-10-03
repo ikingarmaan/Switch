@@ -56,7 +56,7 @@ Download the pre-compiled, codesigned app bundle directly from GitHub Releases:
 | 🛡️ **AdGuard & Family DNS** | System-wide DNS switcher: **AdGuard** (block ads/trackers), **Family Safety** (block adult & phishing sites), and **Cloudflare 1.1.1.1** (ultra high-speed low latency) with 1-click cache flush. |
 | 📋 **Quick Clipboard (F9) & Comment Auto-Paste** | Press **`F9`** anytime (no `Fn` required) to open a sleek, draggable floating HUD storing your last **50 copied texts and images**. Features **Auto-Paste on Comment Box Click** to automatically paste your latest copied snippet the moment you click into any comment box, reply area, or text input across browsers and macOS apps! |
 | 🔊 **Volume Boost** | FineTune-style audio booster that amps system audio up to **200%** with a 3-chevron level indicator for quiet YouTube videos, meetings, and movies. |
-| ✍️ **Grammar Coach** | Real-time typing assistant with a floating polishing box supporting both **👔 Formal** and **💬 Casual** writing styles. |
+| ✍️ **AI Grammar & Writing Coach** | Native writing companion supporting **Apple Native Linguistic Engine** (100% offline, private, zero-latency), **Google Gemini 2.5 Flash**, **Groq Llama 3.3 70B**, **OpenAI GPT-4o-mini**, and **Ollama Local LLMs**. Features 5 dedicated writing modes (⚡️ Fix Errors Only, 👔 Professional, 💬 Friendly, ✂️ Concise, ✨ Elevate), side-by-side comparison, live changes diff, non-destructive editing, and 1-click paste into previous app. |
 | 🎥 **Loom Screen Recorder** | Screen recorder with a draggable circular camera bubble, audio narration, countdown, pause/resume, and instant review modal. |
 | 📊 **System Resource Monitor** | Live CPU %, RAM usage, and Network speed meters pinned to your menu bar with detailed process inspection popover. |
 | ☕️ **Amphetamine & Keep Awake** | Prevents sleep and display sleep indefinitely or for set durations (15m, 30m, 1h, 2h, 4h). |
@@ -81,7 +81,7 @@ Switch packs over **27 native macOS switches** into an ultra-responsive, beautif
 - **Chassis Knock Screenshot**: Accelerometer/microphone spectral peak analysis detects physical laptop chassis taps to take screenshots hands-free.
 - **Folder Tidy**: Automated cleanup for Desktop and Downloads with content-aware categorization.
 - **Loom Screen Recorder**: Full desktop recording + floating webcam bubble with 1-click export.
-- **Grammar Coach**: Instant AI-assisted text polishing in any app.
+- **AI Grammar & Writing Coach**: Complete writing & grammar assistant powered by multiple selectable engines: **Apple Native Engine** (offline, fast, private), **Google Gemini 2.5 Flash**, **Groq Llama 3.3 70B**, **OpenAI GPT-4o-mini**, or **Ollama Local**. Choose from 5 tailored modes (⚡️ Fix Errors Only without changing your words, 👔 Professional Business, 💬 Friendly Casual, ✂️ Concise Direct, ✨ Elevate & Articulate). Features a stunning glassmorphic floating HUD with side-by-side comparison, word diff breakdown, keyboard shortcuts, and 1-click direct paste back into whatever app you were working in.
 - **Self Control & Recovery Tracker**: Built-in sobriety clock, 90-day neuroplasticity dopamine recovery roadmap, live Box Breathing urge surfer, HALT trigger journal, and 1-click system adult website blocker (`switch://control`).
 
 ### 🛡️ Network & Privacy
