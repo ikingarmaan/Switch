@@ -96,7 +96,7 @@ Switch packs over **27 native macOS switches** into an ultra-responsive, beautif
 - **Mute / Unmute**: Instant audio mute via native CoreAudio hardware APIs.
 - **Keep Awake**: Display & system sleep prevention via `IOKit` power assertions.
 - **Volume Boost**: Push your Mac's speakers up to 200% output volume.
-- **Night Shift**: Toggles blue light reduction filter.
+- **Night Shift**: Toggles blue light reduction filter with real-time warmth intensity slider (0-100%) and instant presets (Subtle, Balanced, Warm, Max).
 - **Screen Saver**: Activate screensaver or adjust idle timeout.
 - **AutoHide Dock**: Smoothly toggle Dock visibility.
 - **AutoHide Menu Bar**: Gain full vertical screen real estate.

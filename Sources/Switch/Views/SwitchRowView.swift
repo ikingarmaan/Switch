@@ -401,6 +401,146 @@ public struct SwitchRowView: View {
                             }
                         }
                     }
+                } else if item.type == .nightShift {
+                    HStack(spacing: 5) {
+                        if item.isOn {
+                            // Slider to adjust Night Shift warmth / intensity
+                            HStack(spacing: 3) {
+                                Image(systemName: "sun.min")
+                                    .font(.system(size: 8))
+                                    .foregroundColor(Color.orange.opacity(0.65))
+                                    .help("Cooler (Less Warm)")
+                                
+                                Slider(
+                                    value: Binding(
+                                        get: { Double(NightShiftService.shared.currentStrength) },
+                                        set: { NightShiftService.shared.setStrength(Float($0)) }
+                                    ),
+                                    in: 0.1...1.0
+                                )
+                                .controlSize(.mini)
+                                .frame(width: 58)
+                                .accentColor(Color.orange)
+                                .help("Night Shift Warmth: \(NightShiftService.shared.formattedStrength)")
+                                
+                                Image(systemName: "sun.max.fill")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(Color.orange)
+                                    .help("Warmer (More Amber)")
+                            }
+                            
+                            Menu {
+                                Section("Night Shift Warmth") {
+                                    ForEach(NightShiftService.shared.presets, id: \.strength) { preset in
+                                        Button(action: {
+                                            NightShiftService.shared.setStrength(preset.strength)
+                                        }) {
+                                            HStack {
+                                                Text(preset.label)
+                                                if abs(NightShiftService.shared.currentStrength - preset.strength) < 0.05 {
+                                                    Image(systemName: "checkmark")
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                Divider()
+                                
+                                Button(action: {
+                                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.displays") {
+                                        NSWorkspace.shared.open(url)
+                                    }
+                                }) {
+                                    HStack {
+                                        Text("Display Settings...")
+                                        Image(systemName: "gearshape")
+                                    }
+                                }
+                            } label: {
+                                HStack(spacing: 2) {
+                                    Text(NightShiftService.shared.formattedStrength)
+                                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                        .foregroundColor(Color.orange)
+                                    Image(systemName: "chevron.down")
+                                        .font(.system(size: 7))
+                                        .foregroundColor(Color.gray.opacity(0.6))
+                                }
+                            }
+                            .menuStyle(.borderlessButton)
+                            .fixedSize()
+                        } else {
+                            Menu {
+                                Section("Preferred Warmth") {
+                                    ForEach(NightShiftService.shared.presets, id: \.strength) { preset in
+                                        Button(action: {
+                                            NightShiftService.shared.setStrength(preset.strength)
+                                        }) {
+                                            HStack {
+                                                Text(preset.label)
+                                                if abs(NightShiftService.shared.currentStrength - preset.strength) < 0.05 {
+                                                    Image(systemName: "checkmark")
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                Divider()
+                                
+                                Button(action: {
+                                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.displays") {
+                                        NSWorkspace.shared.open(url)
+                                    }
+                                }) {
+                                    HStack {
+                                        Text("Display Settings...")
+                                        Image(systemName: "gearshape")
+                                    }
+                                }
+                            } label: {
+                                HStack(spacing: 3) {
+                                    Text(item.subtitle ?? NightShiftService.shared.formattedStrength)
+                                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                                        .foregroundColor(Color.gray.opacity(0.85))
+                                    Image(systemName: "chevron.down")
+                                        .font(.system(size: 8))
+                                        .foregroundColor(Color.gray.opacity(0.6))
+                                }
+                            }
+                            .menuStyle(.borderlessButton)
+                            .fixedSize()
+                        }
+                    }
+                    .contextMenu {
+                        Section("Night Shift Intensity") {
+                            ForEach(NightShiftService.shared.presets, id: \.strength) { preset in
+                                Button(action: {
+                                    NightShiftService.shared.setStrength(preset.strength)
+                                }) {
+                                    HStack {
+                                        Text(preset.label)
+                                        if abs(NightShiftService.shared.currentStrength - preset.strength) < 0.05 {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        Divider()
+                        
+                        Button(action: {
+                            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.displays") {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }) {
+                            HStack {
+                                Text("Display Settings...")
+                                Image(systemName: "gearshape")
+                            }
+                        }
+                    }
                 } else if item.type == .googlyEyes {
                     HStack(spacing: 5) {
                         if item.isOn {

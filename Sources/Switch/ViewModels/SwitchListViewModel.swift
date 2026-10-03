@@ -469,6 +469,19 @@ public final class SwitchListViewModel: ObservableObject {
             }
             .store(in: &cancellables)
             
+        NotificationCenter.default.publisher(for: .nightShiftDidChange)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self = self,
+                      let index = self.switches.firstIndex(where: { $0.type == .nightShift })
+                else { return }
+                let ns = NightShiftService.shared
+                self.switches[index].isOn = ns.isEnabled()
+                self.switches[index].isLoading = false
+                self.switches[index].subtitle = ns.subtitle
+            }
+            .store(in: &cancellables)
+            
         NotificationCenter.default.publisher(for: .selfControlTick)
             .receive(on: RunLoop.main)
             .sink { [weak self] notif in

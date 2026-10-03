@@ -200,7 +200,8 @@ public final class SystemControlService: @unchecked Sendable {
             }
             
         case .nightShift:
-            return (NightShiftService.shared.isEnabled(), nil)
+            let ns = NightShiftService.shared
+            return (ns.isEnabled(), ns.subtitle)
             
         case .autohideDock:
             let val = Shell.run("defaults read com.apple.dock autohide 2>/dev/null")
