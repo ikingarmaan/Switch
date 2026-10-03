@@ -7,10 +7,11 @@ final class GrammarTypingBoxState: ObservableObject {
             handleInputChanged()
         }
     }
+    @Published var originalText: String = ""
     @Published var selectedStyle: WritingStyle = .fixOnly
-    @Published var selectedFilter: GrammarCategory? = nil
-    @Published var issues: [GrammarIssue] = []
-    @Published var overallScore: Int = 100
+    @Published var autoCorrectAsYouType: Bool = true
+    @Published var appliedFixes: [String] = []
+    @Published var lastFixCount: Int = 0
     @Published var isAILoading: Bool = false
     @Published var copiedConfirmation: Bool = false
     @Published var isShowingSettings: Bool = false
@@ -22,7 +23,8 @@ final class GrammarTypingBoxState: ObservableObject {
     @Published var ollamaEndpointInput: String = ""
     @Published var ollamaModelInput: String = ""
     
-    private var scanDebounceWorkItem: DispatchWorkItem?
+    private var autoCorrectDebounceWorkItem: DispatchWorkItem?
+    private var isProgrammaticUpdate: Bool = false
     
     init() {
         self.selectedStyle = GrammarCoachService.shared.currentStyle
@@ -31,29 +33,6 @@ final class GrammarTypingBoxState: ObservableObject {
         self.openAIKeyInput = GrammarAIService.shared.openaiApiKey
         self.ollamaEndpointInput = GrammarAIService.shared.ollamaEndpoint
         self.ollamaModelInput = GrammarAIService.shared.ollamaModel
-    }
-    
-    public var activeIssues: [GrammarIssue] {
-        issues.filter { !$0.isDismissed && !$0.isApplied }
-    }
-    
-    public var filteredIssues: [GrammarIssue] {
-        if let cat = selectedFilter {
-            return activeIssues.filter { $0.category == cat }
-        }
-        return activeIssues
-    }
-    
-    public var correctnessCount: Int {
-        activeIssues.filter { $0.category == .correctness }.count
-    }
-    
-    public var clarityCount: Int {
-        activeIssues.filter { $0.category == .clarity }.count
-    }
-    
-    public var engagementCount: Int {
-        activeIssues.filter { $0.category == .engagement }.count
     }
     
     public var wordCount: Int {
@@ -70,63 +49,106 @@ final class GrammarTypingBoxState: ObservableObject {
     }
     
     private func handleInputChanged() {
-        scanDebounceWorkItem?.cancel()
+        guard !isProgrammaticUpdate else { return }
+        
+        autoCorrectDebounceWorkItem?.cancel()
         let trimmed = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
-            issues = []
-            overallScore = 100
+            appliedFixes = []
+            lastFixCount = 0
             isAILoading = false
             return
         }
         
+        if originalText.isEmpty && !trimmed.isEmpty {
+            originalText = inputText
+        }
+        
+        guard autoCorrectAsYouType else { return }
+        
+        // Trigger auto-correct if terminal punctuation was entered or upon pause (750ms)
+        let lastChar = inputText.last
+        let isAtSentenceEnd = lastChar == "\n" || (inputText.count >= 2 && inputText.suffix(2) == ". ")
+        let delay: Double = isAtSentenceEnd ? 0.2 : 0.8
+        
         let workItem = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
-            let text = self.inputText
-            let scanned = GrammarCoachService.shared.scanIssues(in: text)
-            let score = GrammarCoachService.shared.calculateScore(text: text, issues: scanned)
+            self.executeAutoCorrect(notifyUser: false)
+        }
+        autoCorrectDebounceWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+    }
+    
+    public func executeAutoCorrect(notifyUser: Bool = true) {
+        let textToCorrect = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !textToCorrect.isEmpty else { return }
+        
+        if originalText.isEmpty {
+            originalText = textToCorrect
+        }
+        
+        let (corrected, fixes) = GrammarCoachService.shared.autoCorrectText(textToCorrect, style: selectedStyle)
+        
+        if corrected != textToCorrect {
+            isProgrammaticUpdate = true
+            inputText = corrected
+            isProgrammaticUpdate = false
             
-            DispatchQueue.main.async {
-                guard self.inputText == text else { return }
-                self.issues = scanned
-                self.overallScore = score
+            appliedFixes = fixes
+            lastFixCount = fixes.count
+            
+            if notifyUser {
+                NSSound(named: "Tink")?.play()
             }
-        }
-        scanDebounceWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: workItem)
-    }
-    
-    // MARK: - Actions
-    
-    public func acceptIssue(_ issue: GrammarIssue) {
-        let updated = GrammarCoachService.shared.applyIssue(issue, to: inputText)
-        inputText = updated
-    }
-    
-    public func dismissIssue(_ issue: GrammarIssue) {
-        if let idx = issues.firstIndex(where: { $0.id == issue.id }) {
-            issues[idx].isDismissed = true
-            overallScore = GrammarCoachService.shared.calculateScore(text: inputText, issues: activeIssues)
+        } else if notifyUser {
+            appliedFixes = []
+            lastFixCount = 0
         }
     }
     
-    public func acceptAllIssues() {
-        guard !activeIssues.isEmpty else { return }
-        let updated = GrammarCoachService.shared.applyAllIssues(activeIssues, to: inputText)
-        inputText = updated
+    public func pasteAndCorrect() {
+        if let str = NSPasteboard.general.string(forType: .string), !str.isEmpty {
+            originalText = str
+            let (corrected, fixes) = GrammarCoachService.shared.autoCorrectText(str, style: selectedStyle)
+            isProgrammaticUpdate = true
+            inputText = corrected
+            isProgrammaticUpdate = false
+            appliedFixes = fixes
+            lastFixCount = fixes.count
+            NSSound(named: "Tink")?.play()
+        }
+    }
+    
+    public func revertToOriginal() {
+        guard !originalText.isEmpty else { return }
+        isProgrammaticUpdate = true
+        inputText = originalText
+        isProgrammaticUpdate = false
+        appliedFixes = []
+        lastFixCount = 0
     }
     
     public func triggerAIPolish(style: WritingStyle) {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         
+        if originalText.isEmpty {
+            originalText = text
+        }
+        
         self.selectedStyle = style
         self.isAILoading = true
         
-        GrammarCoachService.shared.polishTextWithAI(text, style: style) { [weak self] polished, _, _ in
+        GrammarCoachService.shared.polishTextWithAI(text, style: style) { [weak self] polished, _, changes in
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 self.isAILoading = false
+                self.isProgrammaticUpdate = true
                 self.inputText = polished
+                self.isProgrammaticUpdate = false
+                self.appliedFixes = changes
+                self.lastFixCount = changes.count
+                NSSound(named: "Tink")?.play()
             }
         }
     }
@@ -170,28 +192,15 @@ public struct GrammarTypingBoxView: View {
             VisualEffectBackground(material: .hudWindow, blendingMode: .behindWindow)
                 .ignoresSafeArea()
             
-            HStack(spacing: 0) {
-                // Left Column: Main Editor & GrammarlyGO Actions
-                VStack(spacing: 12) {
-                    headerBar
-                    grammarlyGoActionBar
-                    editorArea
-                    footerBar
-                }
-                .padding(16)
-                
-                // Vertical Divider
-                Rectangle()
-                    .fill(Color.white.opacity(0.10))
-                    .frame(width: 1)
-                    .ignoresSafeArea()
-                
-                // Right Column: Grammarly Suggestion Cards Deck
-                sidebarCardsDeck
-                    .frame(width: 290)
+            VStack(spacing: 12) {
+                headerBar
+                toolbarModeBar
+                editorArea
+                footerBar
             }
+            .padding(16)
         }
-        .frame(minWidth: 840, minHeight: 540)
+        .frame(minWidth: 640, minHeight: 440)
         .preferredColorScheme(.dark)
         .sheet(isPresented: $state.isShowingSettings) {
             aiSettingsSheet
@@ -211,18 +220,18 @@ public struct GrammarTypingBoxView: View {
                             endPoint: .bottomTrailing
                         )
                     )
-                    .frame(width: 32, height: 32)
+                    .frame(width: 30, height: 30)
                     .shadow(color: Color.green.opacity(0.3), radius: 5, x: 0, y: 2)
                 
                 Image(systemName: "checkmark.seal.fill")
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.system(size: 14, weight: .bold))
                     .foregroundColor(.white)
             }
             
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 6) {
-                    Text("Grammarly Writing Assistant")
-                        .font(.system(size: 14.5, weight: .bold, design: .rounded))
+                    Text("Grammar Coach & Auto-Corrector")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
                     
                     // Engine Picker Menu
@@ -276,8 +285,8 @@ public struct GrammarTypingBoxView: View {
                     .fixedSize()
                 }
                 
-                Text("Real-time grammar, spelling, clarity & AI rewrites")
-                    .font(.system(size: 11, weight: .regular))
+                Text("Direct auto-correction: typos, punctuation, commas & style without manual acceptance")
+                    .font(.system(size: 10.5, weight: .regular))
                     .foregroundColor(.white.opacity(0.6))
             }
             
@@ -309,23 +318,24 @@ public struct GrammarTypingBoxView: View {
         }
     }
     
-    // MARK: - GrammarlyGO Actions Bar
+    // MARK: - Toolbar Mode Bar
     
-    private var grammarlyGoActionBar: some View {
+    private var toolbarModeBar: some View {
         HStack(spacing: 6) {
             ForEach(WritingStyle.allCases) { style in
                 Button(action: {
+                    state.selectedStyle = style
                     state.triggerAIPolish(style: style)
                 }) {
                     HStack(spacing: 4) {
                         Image(systemName: style.icon)
-                            .font(.system(size: 10.5, weight: .semibold))
+                            .font(.system(size: 10, weight: .semibold))
                         Text(style.badge)
-                            .font(.system(size: 11.5, weight: .medium))
+                            .font(.system(size: 11, weight: .medium))
                     }
                     .foregroundColor(state.selectedStyle == style ? .white : .white.opacity(0.75))
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 5)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4.5)
                     .background(
                         RoundedRectangle(cornerRadius: 6)
                             .fill(state.selectedStyle == style ? Color.blue.opacity(0.35) : Color.white.opacity(0.06))
@@ -336,9 +346,24 @@ public struct GrammarTypingBoxView: View {
                     )
                 }
                 .buttonStyle(.plain)
-                .disabled(state.inputText.isEmpty || state.isAILoading)
+                .disabled(state.isAILoading)
             }
+            
             Spacer()
+            
+            // Auto-Correct As You Type Switch
+            Toggle(isOn: $state.autoCorrectAsYouType) {
+                HStack(spacing: 3) {
+                    Image(systemName: "bolt.fill")
+                        .font(.system(size: 10))
+                        .foregroundColor(state.autoCorrectAsYouType ? Color.yellow : .secondary)
+                    Text("Auto-Correct As You Type")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(state.autoCorrectAsYouType ? .white : .white.opacity(0.5))
+                }
+            }
+            .toggleStyle(.switch)
+            .scaleEffect(0.8)
         }
     }
     
@@ -355,7 +380,7 @@ public struct GrammarTypingBoxView: View {
                     )
                 
                 if state.inputText.isEmpty {
-                    Text("Type or paste your text here...\n\nSwitch checks your grammar in real-time, highlights spelling errors, wordy phrases, and suggests 1-click improvements just like Grammarly.")
+                    Text("Type or paste your text here...\n\nSwitch automatically corrects spelling mistakes, missing commas, punctuation marks, contractions, and capitalization directly in place — no manual accepting needed.")
                         .font(.system(size: 13.5, weight: .regular))
                         .foregroundColor(.white.opacity(0.28))
                         .padding(14)
@@ -390,22 +415,20 @@ public struct GrammarTypingBoxView: View {
                 
                 Spacer()
                 
-                // Paste Button
+                // Paste & Correct Button
                 Button(action: {
-                    if let str = NSPasteboard.general.string(forType: .string), !str.isEmpty {
-                        state.inputText = str
-                    }
+                    state.pasteAndCorrect()
                 }) {
                     HStack(spacing: 3) {
                         Image(systemName: "doc.on.clipboard")
                             .font(.system(size: 10))
-                        Text("Paste")
+                        Text("Paste & Correct")
                             .font(.system(size: 11, weight: .medium))
                     }
-                    .foregroundColor(.white.opacity(0.75))
-                    .padding(.horizontal, 6)
+                    .foregroundColor(.white.opacity(0.8))
+                    .padding(.horizontal, 7)
                     .padding(.vertical, 2.5)
-                    .background(RoundedRectangle(cornerRadius: 4).fill(Color.white.opacity(0.08)))
+                    .background(RoundedRectangle(cornerRadius: 4).fill(Color.white.opacity(0.09)))
                 }
                 .buttonStyle(.plain)
                 
@@ -413,6 +436,9 @@ public struct GrammarTypingBoxView: View {
                 if !state.inputText.isEmpty {
                     Button("Clear") {
                         state.inputText = ""
+                        state.originalText = ""
+                        state.appliedFixes = []
+                        state.lastFixCount = 0
                     }
                     .font(.system(size: 11))
                     .foregroundColor(.white.opacity(0.5))
@@ -438,51 +464,79 @@ public struct GrammarTypingBoxView: View {
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(.white.opacity(0.6))
                 }
-            } else if state.activeIssues.isEmpty && !state.inputText.isEmpty {
+            } else if state.lastFixCount > 0 {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .foregroundColor(Color.green)
+                        .font(.system(size: 11.5))
+                    Text("Auto-corrected \(state.lastFixCount) issues (spelling, commas, punctuation)")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(Color.green.opacity(0.95))
+                    
+                    if !state.originalText.isEmpty && state.originalText != state.inputText {
+                        Button(action: {
+                            state.revertToOriginal()
+                        }) {
+                            HStack(spacing: 2) {
+                                Image(systemName: "arrow.uturn.backward")
+                                    .font(.system(size: 9))
+                                Text("Revert")
+                                    .font(.system(size: 10.5, weight: .medium))
+                            }
+                            .foregroundColor(.white.opacity(0.6))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1.5)
+                            .background(RoundedRectangle(cornerRadius: 3).fill(Color.white.opacity(0.08)))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Restore your original unedited text")
+                    }
+                }
+            } else if !state.inputText.isEmpty {
                 HStack(spacing: 4) {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundColor(Color.green)
                         .font(.system(size: 11))
-                    Text("Flawless! No issues found")
+                    Text("All clear! Flawless grammar and punctuation")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(Color.green.opacity(0.9))
+                        .foregroundColor(Color.green.opacity(0.85))
                 }
-            } else if !state.activeIssues.isEmpty {
-                Text("\(state.activeIssues.count) suggestions ready")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.white.opacity(0.6))
             }
             
             Spacer()
             
-            // Accept All Button
-            if !state.activeIssues.isEmpty {
-                Button(action: {
-                    state.acceptAllIssues()
-                }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 11))
-                        Text("Accept All (\(state.activeIssues.count))")
-                            .font(.system(size: 12, weight: .semibold))
-                    }
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
-                    .background(
-                        RoundedRectangle(cornerRadius: 7)
-                            .fill(
-                                LinearGradient(
-                                    colors: [Color(red: 0.18, green: 0.76, blue: 0.52), Color(red: 0.10, green: 0.55, blue: 0.38)],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-                            .shadow(color: Color.green.opacity(0.25), radius: 4, x: 0, y: 1)
-                    )
+            // Auto-Correct Now Button (Manual trigger or Cmd+Return)
+            Button(action: {
+                state.executeAutoCorrect(notifyUser: true)
+            }) {
+                HStack(spacing: 4) {
+                    Image(systemName: "bolt.fill")
+                        .font(.system(size: 10, weight: .bold))
+                    Text("Auto-Correct Now")
+                        .font(.system(size: 11.5, weight: .bold))
+                    Text("⌘⏎")
+                        .font(.system(size: 9.5, weight: .regular))
+                        .opacity(0.7)
                 }
-                .buttonStyle(.plain)
+                .foregroundColor(.white)
+                .padding(.horizontal, 11)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color(red: 0.18, green: 0.76, blue: 0.52), Color(red: 0.10, green: 0.55, blue: 0.38)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .shadow(color: Color.green.opacity(0.25), radius: 3, x: 0, y: 1)
+                )
             }
+            .buttonStyle(.plain)
+            .keyboardShortcut(.return, modifiers: [.command])
+            .disabled(state.inputText.isEmpty || state.isAILoading)
+            .help("Immediately fix all spelling, commas, and punctuation marks (⌘⏎)")
             
             // Copy Button
             Button(action: {
@@ -492,12 +546,12 @@ public struct GrammarTypingBoxView: View {
                     Image(systemName: state.copiedConfirmation ? "checkmark.circle.fill" : "doc.on.doc.fill")
                         .font(.system(size: 11))
                     Text(state.copiedConfirmation ? "Copied!" : "Copy")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 11.5, weight: .medium))
                 }
                 .foregroundColor(.white.opacity(0.9))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-                .background(RoundedRectangle(cornerRadius: 7).fill(Color.white.opacity(0.12)))
+                .padding(.horizontal, 11)
+                .padding(.vertical, 6)
+                .background(RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(0.12)))
             }
             .buttonStyle(.plain)
             .disabled(state.inputText.isEmpty)
@@ -510,274 +564,17 @@ public struct GrammarTypingBoxView: View {
                     Image(systemName: "arrow.uturn.forward.circle.fill")
                         .font(.system(size: 11))
                     Text("Paste in App")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 11.5, weight: .medium))
                 }
                 .foregroundColor(.white.opacity(0.9))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-                .background(RoundedRectangle(cornerRadius: 7).fill(Color.white.opacity(0.12)))
+                .padding(.horizontal, 11)
+                .padding(.vertical, 6)
+                .background(RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(0.12)))
             }
             .buttonStyle(.plain)
             .disabled(state.inputText.isEmpty)
             .help("Paste directly into your active document or chat")
         }
-    }
-    
-    // MARK: - Sidebar Cards Deck
-    
-    private var sidebarCardsDeck: some View {
-        VStack(spacing: 12) {
-            // Overall Score Card
-            scoreHeaderCard
-            
-            // Category Filter Pills
-            categoryFilterPills
-            
-            // Cards List
-            cardsScrollView
-        }
-        .padding(14)
-        .background(Color.black.opacity(0.25))
-    }
-    
-    // MARK: - Score Header Card
-    
-    private var scoreHeaderCard: some View {
-        HStack(spacing: 12) {
-            // Circular Score Gauge
-            ZStack {
-                Circle()
-                    .stroke(Color.white.opacity(0.10), lineWidth: 4)
-                    .frame(width: 44, height: 44)
-                
-                Circle()
-                    .trim(from: 0, to: CGFloat(state.overallScore) / 100.0)
-                    .stroke(
-                        state.overallScore >= 90
-                            ? Color(red: 0.28, green: 0.76, blue: 0.52)
-                            : (state.overallScore >= 70 ? Color(red: 0.95, green: 0.72, blue: 0.20) : Color(red: 0.95, green: 0.35, blue: 0.35)),
-                        style: StrokeStyle(lineWidth: 4, lineCap: .round)
-                    )
-                    .rotationEffect(.degrees(-90))
-                    .frame(width: 44, height: 44)
-                
-                Text("\(state.overallScore)")
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
-            }
-            
-            VStack(alignment: .leading, spacing: 2) {
-                Text(
-                    state.overallScore >= 95
-                        ? "Flawless Quality"
-                        : (state.overallScore >= 80 ? "Good Quality" : "Needs Review")
-                )
-                .font(.system(size: 13, weight: .bold, design: .rounded))
-                .foregroundColor(.white)
-                
-                Text(
-                    state.activeIssues.isEmpty
-                        ? (state.inputText.isEmpty ? "Enter text to check" : "Zero errors detected")
-                        : "\(state.activeIssues.count) suggestions found"
-                )
-                .font(.system(size: 11, weight: .regular))
-                .foregroundColor(.white.opacity(0.6))
-            }
-            
-            Spacer()
-        }
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 9)
-                .fill(Color.white.opacity(0.05))
-        )
-    }
-    
-    // MARK: - Category Filter Pills
-    
-    private var categoryFilterPills: some View {
-        HStack(spacing: 5) {
-            // All Pill
-            Button(action: {
-                state.selectedFilter = nil
-            }) {
-                Text("All (\(state.activeIssues.count))")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(state.selectedFilter == nil ? .white : .white.opacity(0.6))
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3.5)
-                    .background(
-                        RoundedRectangle(cornerRadius: 5)
-                            .fill(state.selectedFilter == nil ? Color.blue.opacity(0.3) : Color.white.opacity(0.06))
-                    )
-            }
-            .buttonStyle(.plain)
-            
-            if state.correctnessCount > 0 {
-                Button(action: {
-                    state.selectedFilter = .correctness
-                }) {
-                    HStack(spacing: 3) {
-                        Circle()
-                            .fill(GrammarCategory.correctness.color)
-                            .frame(width: 6, height: 6)
-                        Text("\(state.correctnessCount)")
-                            .font(.system(size: 11, weight: .semibold))
-                    }
-                    .foregroundColor(state.selectedFilter == .correctness ? .white : .white.opacity(0.7))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3.5)
-                    .background(
-                        RoundedRectangle(cornerRadius: 5)
-                            .fill(state.selectedFilter == .correctness ? GrammarCategory.correctness.color.opacity(0.3) : Color.white.opacity(0.06))
-                    )
-                }
-                .buttonStyle(.plain)
-            }
-            
-            if state.clarityCount > 0 {
-                Button(action: {
-                    state.selectedFilter = .clarity
-                }) {
-                    HStack(spacing: 3) {
-                        Circle()
-                            .fill(GrammarCategory.clarity.color)
-                            .frame(width: 6, height: 6)
-                        Text("\(state.clarityCount)")
-                            .font(.system(size: 11, weight: .semibold))
-                    }
-                    .foregroundColor(state.selectedFilter == .clarity ? .white : .white.opacity(0.7))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3.5)
-                    .background(
-                        RoundedRectangle(cornerRadius: 5)
-                            .fill(state.selectedFilter == .clarity ? GrammarCategory.clarity.color.opacity(0.3) : Color.white.opacity(0.06))
-                    )
-                }
-                .buttonStyle(.plain)
-            }
-            
-            Spacer()
-        }
-    }
-    
-    // MARK: - Cards ScrollView
-    
-    private var cardsScrollView: some View {
-        ScrollView {
-            VStack(spacing: 10) {
-                if state.filteredIssues.isEmpty {
-                    VStack(spacing: 10) {
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 28))
-                            .foregroundColor(Color(red: 0.28, green: 0.76, blue: 0.52))
-                            .padding(.top, 40)
-                        
-                        Text(state.inputText.isEmpty ? "No text entered" : "All Clear!")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                            .foregroundColor(.white)
-                        
-                        Text(state.inputText.isEmpty ? "Start typing to receive real-time grammar and clarity suggestions." : "Your writing is clear, polished, and error-free.")
-                            .font(.system(size: 11.5, weight: .regular))
-                            .foregroundColor(.white.opacity(0.6))
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 16)
-                    }
-                    .frame(maxWidth: .infinity)
-                } else {
-                    ForEach(state.filteredIssues) { issue in
-                        issueCard(issue)
-                    }
-                }
-            }
-            .padding(.vertical, 4)
-        }
-    }
-    
-    // MARK: - Single Issue Card
-    
-    private func issueCard(_ issue: GrammarIssue) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            // Header
-            HStack {
-                HStack(spacing: 4) {
-                    Image(systemName: issue.category.icon)
-                        .font(.system(size: 9.5))
-                        .foregroundColor(issue.category.color)
-                    Text(issue.category.rawValue)
-                        .font(.system(size: 10.5, weight: .bold))
-                        .foregroundColor(issue.category.color)
-                }
-                
-                Spacer()
-                
-                // Dismiss Button
-                Button(action: {
-                    state.dismissIssue(issue)
-                }) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 9.5, weight: .bold))
-                        .foregroundColor(.white.opacity(0.4))
-                }
-                .buttonStyle(.plain)
-                .help("Dismiss suggestion")
-            }
-            
-            // Correction Comparison
-            HStack(spacing: 6) {
-                Text(issue.original)
-                    .font(.system(size: 12.5, weight: .regular))
-                    .foregroundColor(Color.red.opacity(0.85))
-                    .strikethrough(true, color: Color.red.opacity(0.85))
-                
-                Image(systemName: "arrow.right")
-                    .font(.system(size: 9.5))
-                    .foregroundColor(.white.opacity(0.4))
-                
-                Text(issue.replacement)
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundColor(Color(red: 0.28, green: 0.85, blue: 0.52))
-            }
-            
-            // Reason
-            Text(issue.reason)
-                .font(.system(size: 10.5, weight: .regular))
-                .foregroundColor(.white.opacity(0.6))
-                .lineLimit(2)
-            
-            // Accept Button
-            Button(action: {
-                state.acceptIssue(issue)
-            }) {
-                HStack(spacing: 4) {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 10, weight: .bold))
-                    Text("Accept: \"\(issue.replacement)\"")
-                        .font(.system(size: 11.5, weight: .semibold))
-                }
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 5)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(issue.category.color.opacity(0.35))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(issue.category.color.opacity(0.6), lineWidth: 0.8)
-                        )
-                )
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.white.opacity(0.06))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.white.opacity(0.10), lineWidth: 0.6)
-                )
-        )
     }
     
     // MARK: - AI Settings Sheet

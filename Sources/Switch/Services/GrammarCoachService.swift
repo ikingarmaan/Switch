@@ -189,7 +189,47 @@ public final class GrammarCoachService: ObservableObject, @unchecked Sendable {
         "changs": "changes",
         "restaraunt": "restaurant",
         "unfortunatly": "unfortunately",
-        "developr": "developer"
+        "developr": "developer",
+        // Contractions with apostrophes
+        "dont": "don't",
+        "cant": "can't",
+        "wont": "won't",
+        "didnt": "didn't",
+        "doesnt": "doesn't",
+        "isnt": "isn't",
+        "arent": "aren't",
+        "wasnt": "wasn't",
+        "werent": "weren't",
+        "hasnt": "hasn't",
+        "havent": "haven't",
+        "hadnt": "hadn't",
+        "wouldnt": "wouldn't",
+        "shouldnt": "shouldn't",
+        "couldnt": "couldn't",
+        "mustnt": "mustn't",
+        "im": "I'm",
+        "ive": "I've",
+        "youre": "you're",
+        "theyre": "they're",
+        "weve": "we've",
+        "youve": "you've",
+        "theyve": "they've",
+        "youll": "you'll",
+        "theyll": "they'll",
+        "thats": "that's",
+        "whats": "what's",
+        "theres": "there's",
+        "heres": "here's",
+        "wheres": "where's",
+        "hows": "how's",
+        "whos": "who's",
+        "itll": "it'll",
+        "thatll": "that'll",
+        "couldve": "could've",
+        "shouldve": "should've",
+        "wouldve": "would've",
+        "mightve": "might've",
+        "mustve": "must've"
     ]
     
     // Contractions mapping
@@ -320,12 +360,12 @@ public final class GrammarCoachService: ObservableObject, @unchecked Sendable {
         
         if typingBoxPanel == nil {
             let panel = KeyPanel(
-                contentRect: NSRect(x: 0, y: 0, width: 840, height: 560),
+                contentRect: NSRect(x: 0, y: 0, width: 780, height: 520),
                 styleMask: [.titled, .closable, .fullSizeContentView, .resizable],
                 backing: .buffered,
                 defer: false
             )
-            panel.minSize = NSSize(width: 720, height: 500)
+            panel.minSize = NSSize(width: 620, height: 420)
             panel.isFloatingPanel = true
             panel.level = .floating
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
@@ -907,51 +947,234 @@ public final class GrammarCoachService: ObservableObject, @unchecked Sendable {
         return polishNative(text, style: style)
     }
     
-    public func polishNative(_ text: String, style: WritingStyle) -> (polished: String, correctionsCount: Int, changes: [String]) {
+    // MARK: - Advanced Comma & Punctuation Auto-Correction
+    
+    public func correctPunctuationAndCommas(in text: String) -> (result: String, fixes: [String]) {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return (text, 0, [])
+            return (text, [])
         }
         
-        let issues = scanIssues(in: text)
-        let relevantIssues: [GrammarIssue]
-        switch style {
-        case .fixOnly:
-            relevantIssues = issues.filter { $0.category == .correctness }
-        case .formal, .casual, .elevate:
-            relevantIssues = issues
-        case .concise:
-            relevantIssues = issues.filter { $0.category == .correctness || $0.category == .clarity }
-        }
+        var working = text
+        var fixes: [String] = []
         
-        var working = applyAllIssues(relevantIssues, to: text)
-        var changes = relevantIssues.map { "\($0.original) → \($0.replacement) (\($0.reason))" }
-        
-        // Style-specific adjustments
-        if style == .formal {
-            for (contraction, expansion) in formalExpansions {
-                let pat = "\\b" + NSRegularExpression.escapedPattern(for: contraction) + "\\b"
-                if let regex = try? NSRegularExpression(pattern: pat, options: .caseInsensitive) {
-                    let matches = regex.matches(in: working, range: NSRange(location: 0, length: (working as NSString).length))
-                    if !matches.isEmpty {
-                        working = regex.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: (working as NSString).length), withTemplate: expansion)
-                        changes.append("Formal: \(contraction) → \(expansion)")
-                    }
-                }
-            }
-        } else if style == .casual {
-            for (expansion, contraction) in casualContractions {
-                let pat = "\\b" + NSRegularExpression.escapedPattern(for: expansion) + "\\b"
-                if let regex = try? NSRegularExpression(pattern: pat, options: .caseInsensitive) {
-                    let matches = regex.matches(in: working, range: NSRange(location: 0, length: (working as NSString).length))
-                    if !matches.isEmpty {
-                        working = regex.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: (working as NSString).length), withTemplate: contraction)
-                        changes.append("Casual: \(expansion) → \(contraction)")
-                    }
-                }
+        // 1. Spacing around punctuation:
+        // Remove space before punctuation: "word , word" -> "word, word", "word ." -> "word."
+        if let spaceBefore = try? NSRegularExpression(pattern: "\\s+([,.:;?!])", options: []) {
+            let ns = working as NSString
+            let matches = spaceBefore.matches(in: working, range: NSRange(location: 0, length: ns.length))
+            if !matches.isEmpty {
+                working = spaceBefore.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: ns.length), withTemplate: "$1")
+                fixes.append("Removed space before punctuation")
             }
         }
         
-        // Sentence capitalization
+        // Add space after comma: "apple,banana" -> "apple, banana" (protecting numbers like 1,000)
+        if let commaAfter = try? NSRegularExpression(pattern: "(?<=[a-zA-Z0-9]),(?=[a-zA-Z])", options: []) {
+            let ns = working as NSString
+            let matches = commaAfter.matches(in: working, range: NSRange(location: 0, length: ns.length))
+            if !matches.isEmpty {
+                working = commaAfter.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: ns.length), withTemplate: ", ")
+                fixes.append("Added space after comma")
+            }
+        }
+        
+        // Add space after terminal punctuation (period, question mark, exclamation mark) before letters, protecting web domains (e.g. google.com):
+        let domainExtensions = "com|org|net|edu|gov|io|co|ai|app|dev|html|css|js|ts|swift|py|json|md|pdf|png|jpg|jpeg"
+        let punctAfterPattern = "(?<=[a-zA-Z0-9])([?!])(?=[a-zA-Z])|(?<=[a-zA-Z0-9])(\\.)(?!(?:\(domainExtensions))\\b)(?=[a-zA-Z])"
+        if let terminalAfter = try? NSRegularExpression(pattern: punctAfterPattern, options: .caseInsensitive) {
+            let ns = working as NSString
+            let matches = terminalAfter.matches(in: working, range: NSRange(location: 0, length: ns.length))
+            if !matches.isEmpty {
+                working = terminalAfter.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: ns.length), withTemplate: "$1$2 ")
+                fixes.append("Added space after sentence punctuation")
+            }
+        }
+        
+        // Add space after colon and semicolon before letter: "Note:this" -> "Note: this"
+        if let colonAfter = try? NSRegularExpression(pattern: "(?<=[a-zA-Z0-9])([:;])(?=[a-zA-Z])", options: []) {
+            let ns = working as NSString
+            let matches = colonAfter.matches(in: working, range: NSRange(location: 0, length: ns.length))
+            if !matches.isEmpty {
+                working = colonAfter.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: ns.length), withTemplate: "$1 ")
+                fixes.append("Added space after colon/semicolon")
+            }
+        }
+        
+        // Parentheses spacing: "word(" -> "word (", "( word )" -> "(word)"
+        if let parenBefore = try? NSRegularExpression(pattern: "(?<=[a-zA-Z0-9])\\(", options: []) {
+            working = parenBefore.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: (working as NSString).length), withTemplate: " (")
+        }
+        if let parenInsideL = try? NSRegularExpression(pattern: "\\(\\s+", options: []) {
+            working = parenInsideL.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: (working as NSString).length), withTemplate: "(")
+        }
+        if let parenInsideR = try? NSRegularExpression(pattern: "\\s+\\)", options: []) {
+            working = parenInsideR.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: (working as NSString).length), withTemplate: ")")
+        }
+        
+        // 2. Duplicate / Repeated Punctuation Normalization:
+        // Multiple commas: ",," -> ","
+        if let doubleComma = try? NSRegularExpression(pattern: ",{2,}|,\\s*,", options: []) {
+            let ns = working as NSString
+            if !doubleComma.matches(in: working, range: NSRange(location: 0, length: ns.length)).isEmpty {
+                working = doubleComma.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: ns.length), withTemplate: ",")
+                fixes.append("Removed repeated comma")
+            }
+        }
+        // Double period: ".." -> "."
+        if let doublePeriod = try? NSRegularExpression(pattern: "(?<!\\.)\\.\\.(?!\\.)", options: []) {
+            let ns = working as NSString
+            if !doublePeriod.matches(in: working, range: NSRange(location: 0, length: ns.length)).isEmpty {
+                working = doublePeriod.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: ns.length), withTemplate: ".")
+                fixes.append("Fixed double period")
+            }
+        }
+        // 4+ periods -> standard ellipsis "..."
+        if let longEllipsis = try? NSRegularExpression(pattern: "\\.{4,}", options: []) {
+            working = longEllipsis.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: (working as NSString).length), withTemplate: "...")
+        }
+        // Repeated question marks: "??" -> "?"
+        if let multiQ = try? NSRegularExpression(pattern: "\\?{2,}", options: []) {
+            let ns = working as NSString
+            if !multiQ.matches(in: working, range: NSRange(location: 0, length: ns.length)).isEmpty {
+                working = multiQ.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: ns.length), withTemplate: "?")
+                fixes.append("Simplified multiple question marks")
+            }
+        }
+        // Repeated exclamation marks: "!!" -> "!"
+        if let multiEx = try? NSRegularExpression(pattern: "!{2,}", options: []) {
+            let ns = working as NSString
+            if !multiEx.matches(in: working, range: NSRange(location: 0, length: ns.length)).isEmpty {
+                working = multiEx.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: ns.length), withTemplate: "!")
+                fixes.append("Simplified multiple exclamation marks")
+            }
+        }
+        
+        // 3. Introductory Transition Words & Adverbs Missing Comma:
+        let introWords = [
+            "However", "Therefore", "Furthermore", "Moreover", "In fact", "In addition",
+            "Additionally", "Meanwhile", "Nevertheless", "Nonetheless", "Consequently",
+            "Subsequently", "Finally", "For example", "For instance", "As a result",
+            "Of course", "Obviously", "Naturally", "Clearly", "Frankly", "Honestly",
+            "Actually", "Unfortunately", "Fortunately", "Luckily", "Generally",
+            "Specifically", "Ideally", "Essentially", "Basically", "In conclusion",
+            "To begin with", "On the other hand", "By the way", "In summary", "In short",
+            "To be honest", "Needless to say", "Most importantly", "All in all",
+            "Above all", "At the same time", "After all", "At last", "In general", "In particular"
+        ]
+        
+        let introPattern = "(^|[.?!;\\n]\\s*)(" + introWords.map { NSRegularExpression.escapedPattern(for: $0) }.joined(separator: "|") + ")\\s+([a-zA-Z])"
+        if let introRegex = try? NSRegularExpression(pattern: introPattern, options: .caseInsensitive) {
+            let ns = working as NSString
+            let matches = introRegex.matches(in: working, range: NSRange(location: 0, length: ns.length))
+            if !matches.isEmpty {
+                working = introRegex.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: ns.length), withTemplate: "$1$2, $3")
+                fixes.append("Added comma after introductory phrase")
+            }
+        }
+        
+        // Ordinal list transitions: "First we need", "Secondly you should"
+        let ordinalPattern = "(^|[.?!;\\n]\\s*)(First|Firstly|Second|Secondly|Third|Thirdly|Lastly)\\s+(we|I|you|he|she|it|they|let|to|check|open|click|do|make|run|start|go|install|take|ensure|note)\\b"
+        if let ordRegex = try? NSRegularExpression(pattern: ordinalPattern, options: .caseInsensitive) {
+            let ns = working as NSString
+            let matches = ordRegex.matches(in: working, range: NSRange(location: 0, length: ns.length))
+            if !matches.isEmpty {
+                working = ordRegex.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: ns.length), withTemplate: "$1$2, $3")
+                fixes.append("Added comma after introductory transition")
+            }
+        }
+        
+        // Interjections: "Yes I will", "No I can't", "Sure we can"
+        let interjectionPattern = "(^|[.?!;\\n]\\s*)(Yes|No|Sure)\\s+([a-zA-Z])"
+        if let intRegex = try? NSRegularExpression(pattern: interjectionPattern, options: .caseInsensitive) {
+            let ns = working as NSString
+            let matches = intRegex.matches(in: working, range: NSRange(location: 0, length: ns.length))
+            if !matches.isEmpty {
+                working = intRegex.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: ns.length), withTemplate: "$1$2, $3")
+                fixes.append("Added comma after introductory response")
+            }
+        }
+        
+        // 4. Coordinating Conjunctions (FANBOYS: but, so, yet) connecting independent clauses:
+        // "I wanted to go but I was tired" -> "I wanted to go, but I was tired"
+        // Avoid "so that" or "so as"
+        let conjunctionPattern = "(?<!not only )(?<!so that )(?<!so as )(?<![,;:.?!])\\s+(but|so|yet)\\s+(I|you|he|she|it|we|they)\\b"
+        if let conjRegex = try? NSRegularExpression(pattern: conjunctionPattern, options: []) {
+            let ns = working as NSString
+            let matches = conjRegex.matches(in: working, range: NSRange(location: 0, length: ns.length))
+            if !matches.isEmpty {
+                working = conjRegex.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: ns.length), withTemplate: ", $1 $2")
+                fixes.append("Added comma before coordinating conjunction")
+            }
+        }
+        
+        // 5. Tag Questions & Polite Closers:
+        // "You received the file right?" -> "You received the file, right?"
+        let tagPattern = "(?<![,;:.?!])\\s+(right|isnt it|isn't it|arent you|aren't you|dont you|don't you|didnt you|didn't you|wont you|won't you|cant you|can't you)\\?"
+        if let tagRegex = try? NSRegularExpression(pattern: tagPattern, options: .caseInsensitive) {
+            let ns = working as NSString
+            let matches = tagRegex.matches(in: working, range: NSRange(location: 0, length: ns.length))
+            if !matches.isEmpty {
+                working = tagRegex.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: ns.length), withTemplate: ", $1?")
+                fixes.append("Added comma before question tag")
+            }
+        }
+        
+        // Polite closers: "Help me please." -> "Help me, please."
+        let pleasePattern = "(?<![,;:.?!])\\s+(please)([.!])"
+        if let pleaseRegex = try? NSRegularExpression(pattern: pleasePattern, options: .caseInsensitive) {
+            let ns = working as NSString
+            let matches = pleaseRegex.matches(in: working, range: NSRange(location: 0, length: ns.length))
+            if !matches.isEmpty {
+                working = pleaseRegex.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: ns.length), withTemplate: ", $1$2")
+                fixes.append("Added comma before closing polite expression")
+            }
+        }
+        
+        // Direct address in gratitude: "Thanks John" -> "Thanks, John"
+        let thanksPattern = "\\b(thanks|thank you)\\s+([A-Z][a-z]+)\\b"
+        if let thanksRegex = try? NSRegularExpression(pattern: thanksPattern, options: .caseInsensitive) {
+            let ns = working as NSString
+            let matches = thanksRegex.matches(in: working, range: NSRange(location: 0, length: ns.length))
+            if !matches.isEmpty {
+                working = thanksRegex.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: ns.length), withTemplate: "$1, $2")
+                fixes.append("Added comma for direct address")
+            }
+        }
+        
+        // 6. Dates: "October 4 2026" -> "October 4, 2026"
+        let datePattern = "\\b(January|February|March|April|May|June|July|August|September|October|November|December)\\s+(\\d{1,2})\\s+(\\d{4})\\b"
+        if let dateRegex = try? NSRegularExpression(pattern: datePattern, options: .caseInsensitive) {
+            let ns = working as NSString
+            let matches = dateRegex.matches(in: working, range: NSRange(location: 0, length: ns.length))
+            if !matches.isEmpty {
+                working = dateRegex.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: ns.length), withTemplate: "$1 $2, $3")
+                fixes.append("Added comma in date")
+            }
+        }
+        
+        // 7. Contraction Apostrophes in special contexts:
+        // "its good" -> "it's good"
+        let itsPattern = "\\bits\\s+(a|an|the|not|been|going|important|ready|done|hard|easy|possible|cool|great|working|broken|fine|ok|okay|nice|super|really|too|very|so)\\b"
+        if let itsRegex = try? NSRegularExpression(pattern: itsPattern, options: .caseInsensitive) {
+            let ns = working as NSString
+            let matches = itsRegex.matches(in: working, range: NSRange(location: 0, length: ns.length))
+            if !matches.isEmpty {
+                working = itsRegex.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: ns.length), withTemplate: "it's $1")
+                fixes.append("Added apostrophe to \"it's\"")
+            }
+        }
+        // "lets go" -> "let's go"
+        let letsPattern = "\\blets\\s+(go|do|see|try|make|check|start|build|work|take|get|have|talk|discuss|meet|proceed|continue)\\b"
+        if let letsRegex = try? NSRegularExpression(pattern: letsPattern, options: .caseInsensitive) {
+            let ns = working as NSString
+            let matches = letsRegex.matches(in: working, range: NSRange(location: 0, length: ns.length))
+            if !matches.isEmpty {
+                working = letsRegex.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: ns.length), withTemplate: "let's $1")
+                fixes.append("Added apostrophe to \"let's\"")
+            }
+        }
+        
+        // 8. Sentence Capitalization:
         var capitalizedResult = ""
         var capitalizeNext = true
         for char in working {
@@ -965,9 +1188,115 @@ public final class GrammarCoachService: ObservableObject, @unchecked Sendable {
                 }
             }
         }
+        working = capitalizedResult
         
-        let trimmed = capitalizedResult.trimmingCharacters(in: .whitespacesAndNewlines)
-        return (trimmed, changes.count, changes)
+        // Standalone pronoun "i" -> "I"
+        if let iRegex = try? NSRegularExpression(pattern: "\\bi\\b", options: []) {
+            let ns = working as NSString
+            let matches = iRegex.matches(in: working, range: NSRange(location: 0, length: ns.length))
+            if !matches.isEmpty {
+                working = iRegex.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: ns.length), withTemplate: "I")
+                fixes.append("Capitalized pronoun \"I\"")
+            }
+        }
+        
+        // Capitalize days and months
+        let properNouns = [
+            "monday": "Monday", "tuesday": "Tuesday", "wednesday": "Wednesday",
+            "thursday": "Thursday", "friday": "Friday", "saturday": "Saturday", "sunday": "Sunday",
+            "january": "January", "february": "February", "march": "March", "april": "April",
+            "june": "June", "july": "July", "august": "August", "september": "September",
+            "october": "October", "november": "November", "december": "December"
+        ]
+        for (lower, proper) in properNouns {
+            if let pRegex = try? NSRegularExpression(pattern: "\\b" + lower + "\\b", options: []) {
+                working = pRegex.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: (working as NSString).length), withTemplate: proper)
+            }
+        }
+        
+        // 9. Terminal Punctuation:
+        // If text ends with an alphanumeric character and has at least 2 words, append a period "."
+        let trimmed = working.trimmingCharacters(in: .whitespacesAndNewlines)
+        let words = trimmed.split { $0.isWhitespace || $0.isNewline }
+        if words.count >= 2, let lastChar = trimmed.last, lastChar.isLetter || lastChar.isNumber {
+            working = trimmed + "."
+            fixes.append("Added terminal period")
+        }
+        
+        return (working.trimmingCharacters(in: .whitespacesAndNewlines), fixes)
+    }
+    
+    // MARK: - Direct Instant Auto-Correction Pipeline
+    
+    public func autoCorrectText(_ text: String, style: WritingStyle = .fixOnly) -> (corrected: String, fixes: [String]) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return (text, []) }
+        
+        var working = trimmed
+        var allFixes: [String] = []
+        
+        // Step 1: Punctuation and comma correction pass
+        let punctPass1 = correctPunctuationAndCommas(in: working)
+        working = punctPass1.result
+        allFixes.append(contentsOf: punctPass1.fixes)
+        
+        // Step 2: Spell check and grammar scanner pass
+        let issues = scanIssues(in: working)
+        let relevantIssues: [GrammarIssue]
+        switch style {
+        case .fixOnly:
+            relevantIssues = issues.filter { $0.category == .correctness }
+        case .formal, .casual, .elevate:
+            relevantIssues = issues
+        case .concise:
+            relevantIssues = issues.filter { $0.category == .correctness || $0.category == .clarity }
+        }
+        
+        if !relevantIssues.isEmpty {
+            working = applyAllIssues(relevantIssues, to: working)
+            for issue in relevantIssues {
+                allFixes.append("\"\(issue.original)\" → \"\(issue.replacement)\"")
+            }
+        }
+        
+        // Step 3: Style expansions / contractions
+        if style == .formal {
+            for (contraction, expansion) in formalExpansions {
+                let pat = "\\b" + NSRegularExpression.escapedPattern(for: contraction) + "\\b"
+                if let regex = try? NSRegularExpression(pattern: pat, options: .caseInsensitive) {
+                    let matches = regex.matches(in: working, range: NSRange(location: 0, length: (working as NSString).length))
+                    if !matches.isEmpty {
+                        working = regex.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: (working as NSString).length), withTemplate: expansion)
+                        allFixes.append("\(contraction) → \(expansion)")
+                    }
+                }
+            }
+        } else if style == .casual {
+            for (expansion, contraction) in casualContractions {
+                let pat = "\\b" + NSRegularExpression.escapedPattern(for: expansion) + "\\b"
+                if let regex = try? NSRegularExpression(pattern: pat, options: .caseInsensitive) {
+                    let matches = regex.matches(in: working, range: NSRange(location: 0, length: (working as NSString).length))
+                    if !matches.isEmpty {
+                        working = regex.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: (working as NSString).length), withTemplate: contraction)
+                        allFixes.append("\(expansion) → \(contraction)")
+                    }
+                }
+            }
+        }
+        
+        // Step 4: Final Punctuation, comma, and capitalization pass
+        let punctPass2 = correctPunctuationAndCommas(in: working)
+        working = punctPass2.result
+        for fix in punctPass2.fixes where !allFixes.contains(fix) {
+            allFixes.append(fix)
+        }
+        
+        return (working, allFixes)
+    }
+    
+    public func polishNative(_ text: String, style: WritingStyle) -> (polished: String, correctionsCount: Int, changes: [String]) {
+        let (corrected, fixes) = autoCorrectText(text, style: style)
+        return (corrected, fixes.count, fixes)
     }
     
     // MARK: - Mini Floating Toast
