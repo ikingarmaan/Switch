@@ -1434,6 +1434,54 @@ public struct SwitchRowView: View {
                             Divider()
                             
                             Button(action: {
+                                ClipboardService.shared.setAutoPasteOnCommentClick(!ClipboardService.shared.autoPasteOnCommentClick)
+                            }) {
+                                HStack {
+                                    Text("Auto-Paste on Comment Box Click")
+                                    if ClipboardService.shared.autoPasteOnCommentClick {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                            
+                            if ClipboardService.shared.autoPasteOnCommentClick {
+                                Button(action: {
+                                    ClipboardService.shared.setAutoPasteCommentOncePerCopy(true)
+                                }) {
+                                    HStack {
+                                        Text("  • Once per Copied Item")
+                                        if ClipboardService.shared.autoPasteCommentOncePerCopy {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                                
+                                Button(action: {
+                                    ClipboardService.shared.setAutoPasteCommentOncePerCopy(false)
+                                }) {
+                                    HStack {
+                                        Text("  • Every Comment Box Click")
+                                        if !ClipboardService.shared.autoPasteCommentOncePerCopy {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                                
+                                Button(action: {
+                                    ClipboardService.shared.setAutoPasteSound(!ClipboardService.shared.autoPasteSound)
+                                }) {
+                                    HStack {
+                                        Text("  • Chime Sound on Paste")
+                                        if ClipboardService.shared.autoPasteSound {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            Button(action: {
                                 ClipboardService.shared.clearAllHistory()
                             }) {
                                 HStack {
@@ -1516,6 +1564,54 @@ public struct SwitchRowView: View {
                                 Text("Auto-Paste on Selection")
                                 if ClipboardService.shared.autoPaste {
                                     Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                        
+                        Divider()
+                        
+                        Button(action: {
+                            ClipboardService.shared.setAutoPasteOnCommentClick(!ClipboardService.shared.autoPasteOnCommentClick)
+                        }) {
+                            HStack {
+                                Text("Auto-Paste on Comment Box Click")
+                                if ClipboardService.shared.autoPasteOnCommentClick {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                        
+                        if ClipboardService.shared.autoPasteOnCommentClick {
+                            Button(action: {
+                                ClipboardService.shared.setAutoPasteCommentOncePerCopy(true)
+                            }) {
+                                HStack {
+                                    Text("  • Once per Copied Item")
+                                    if ClipboardService.shared.autoPasteCommentOncePerCopy {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                            
+                            Button(action: {
+                                ClipboardService.shared.setAutoPasteCommentOncePerCopy(false)
+                            }) {
+                                HStack {
+                                    Text("  • Every Comment Box Click")
+                                    if !ClipboardService.shared.autoPasteCommentOncePerCopy {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                            
+                            Button(action: {
+                                ClipboardService.shared.setAutoPasteSound(!ClipboardService.shared.autoPasteSound)
+                            }) {
+                                HStack {
+                                    Text("  • Chime Sound on Paste")
+                                    if ClipboardService.shared.autoPasteSound {
+                                        Image(systemName: "checkmark")
+                                    }
                                 }
                             }
                         }

@@ -288,6 +288,26 @@ public struct ClipboardHistoryView: View {
                 .buttonStyle(.plain)
                 .help("Automatically paste (⌘V) into active app on selection")
                 
+                // Auto-Paste on Comment Click toggle
+                Button(action: {
+                    service.setAutoPasteOnCommentClick(!service.autoPasteOnCommentClick)
+                }) {
+                    HStack(spacing: 3) {
+                        Image(systemName: service.autoPasteOnCommentClick ? "text.bubble.fill" : "text.bubble")
+                            .font(.system(size: 8))
+                            .foregroundColor(service.autoPasteOnCommentClick ? Color(red: 0.38, green: 0.75, blue: 0.98) : Color.white.opacity(0.35))
+                        Text("Auto 💬")
+                            .font(.system(size: 8.5, weight: service.autoPasteOnCommentClick ? .semibold : .regular))
+                            .foregroundColor(service.autoPasteOnCommentClick ? .white : Color.white.opacity(0.5))
+                    }
+                    .padding(.horizontal, 4.5)
+                    .padding(.vertical, 2)
+                    .background(Color.white.opacity(service.autoPasteOnCommentClick ? 0.1 : 0.03))
+                    .cornerRadius(3.5)
+                }
+                .buttonStyle(.plain)
+                .help("Automatically paste latest copied item when clicking into any comment box")
+                
                 // Clear button
                 if !service.items.isEmpty {
                     Button(action: {
@@ -308,7 +328,7 @@ public struct ClipboardHistoryView: View {
             .padding(.vertical, 4.5)
             .background(Color.black.opacity(0.25))
         }
-        .frame(width: 310, height: 340)
+        .frame(width: 326, height: 340)
         .background(
             ZStack {
                 VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)

@@ -54,7 +54,7 @@ Download the pre-compiled, codesigned app bundle directly from GitHub Releases:
 | 👀 **Googly Eyes with Resizer** | Animated menu bar eyes that follow your cursor with dynamic emotions (love, dizzy, sleepy, surprised, anime tears) and an interactive **50%–160% size slider**. |
 | 🗂️ **Smart Folder Tidy** | One-click organization for Downloads and Desktop. Intelligently sorts files into documents, photos, movies, archives, and code — avoiding redundant folders and auto-renaming. |
 | 🛡️ **AdGuard & Family DNS** | System-wide DNS switcher: **AdGuard** (block ads/trackers), **Family Safety** (block adult & phishing sites), and **Cloudflare 1.1.1.1** (ultra high-speed low latency) with 1-click cache flush. |
-| 📋 **Quick Clipboard (F9)** | Press **`F9`** anytime (no `Fn` required) to open a sleek, draggable floating HUD storing your last **50 copied texts and images** with instant search and paste. |
+| 📋 **Quick Clipboard (F9) & Comment Auto-Paste** | Press **`F9`** anytime (no `Fn` required) to open a sleek, draggable floating HUD storing your last **50 copied texts and images**. Features **Auto-Paste on Comment Box Click** to automatically paste your latest copied snippet the moment you click into any comment box, reply area, or text input across browsers and macOS apps! |
 | 🔊 **Volume Boost** | FineTune-style audio booster that amps system audio up to **200%** with a 3-chevron level indicator for quiet YouTube videos, meetings, and movies. |
 | ✍️ **Grammar Coach** | Real-time typing assistant with a floating polishing box supporting both **👔 Formal** and **💬 Casual** writing styles. |
 | 🎥 **Loom Screen Recorder** | Screen recorder with a draggable circular camera bubble, audio narration, countdown, pause/resume, and instant review modal. |
@@ -75,7 +75,7 @@ Switch packs over **27 native macOS switches** into an ultra-responsive, beautif
 ### 🚀 Productivity & Workflow
 - **Auto Tab Switcher**: Hands-free tab carousel that auto-switches browser and app tabs every minute (or 10s, 30s, 1m, 2m, 5m, 10m). Supports forward/reverse direction, customizable shortcut styles (Control+Tab, ⌘⌥→, ⌘⇧]), screen-awake retention, live countdown ticker, and audio feedback.
 - **Colorful Sticky Notes**: Multi-theme desktop and floating stickies with interactive checkboxes, strikethrough to-do items, text alignment (Left, Center, Right), font sizes, interactive color palette, desktop wallpaper pinning, instant copy, and auto-save.
-- **Clipboard History**: Saves up to 50 copied text and image items. Triggered via global shortcut `F9`.
+- **Clipboard History & Comment Auto-Paste**: Saves up to 50 copied text and image items with drag-and-drop and search. Includes an intelligent **Auto-Paste on Comment Box Click** mode that detects when you click into any comment box, reply area, or text field across Safari, Chrome, Arc, Slack, Notes, and web apps, automatically pasting your latest copied item without needing to press ⌘V! Triggered via global shortcut `F9` or menu bar.
 - **Auto Scroll (Up & Down)**: Automated hands-free scrolling with bounce turnaround, speed controls, and session timers.
 - **Auto Mouse Movement**: Prevents idle sleep and keeps status active on Slack/Teams with customizable tile distance steps.
 - **Chassis Knock Screenshot**: Accelerometer/microphone spectral peak analysis detects physical laptop chassis taps to take screenshots hands-free.

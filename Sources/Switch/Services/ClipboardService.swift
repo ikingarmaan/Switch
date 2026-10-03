@@ -3,10 +3,12 @@ import Cocoa
 import SwiftUI
 import Combine
 import CryptoKit
+import ApplicationServices
 
 public extension Notification.Name {
     static let clipboardStateDidChange = Notification.Name("SwitchClipboardStateDidChange")
     static let clipboardItemsDidChange = Notification.Name("SwitchClipboardItemsDidChange")
+    static let clipboardAutoPastedComment = Notification.Name("SwitchClipboardAutoPastedComment")
 }
 
 public enum ClipboardItemType: String, Codable, Sendable {
@@ -102,23 +104,35 @@ public final class ClipboardService: ObservableObject, @unchecked Sendable {
     
     private let keyEnabled = "switch.clipboard.enabled"
     private let keyAutoPaste = "switch.clipboard.autoPaste"
+    private let keyAutoPasteOnCommentClick = "switch.clipboard.autoPasteOnCommentClick"
+    private let keyAutoPasteCommentOncePerCopy = "switch.clipboard.autoPasteCommentOncePerCopy"
+    private let keyAutoPasteSound = "switch.clipboard.autoPasteSound"
     
     @Published public private(set) var isEnabled: Bool = true
     @Published public var autoPaste: Bool = true
+    @Published public var autoPasteOnCommentClick: Bool = true
+    @Published public var autoPasteCommentOncePerCopy: Bool = true
+    @Published public var autoPasteSound: Bool = true
     @Published public private(set) var items: [ClipboardItem] = []
     @Published public private(set) var isWindowVisible: Bool = false
     
     // In-memory thumbnail cache
     private var thumbnailCache: [UUID: NSImage] = [:]
     
-    // Polling & Key monitoring
+    // Polling & Key/Mouse monitoring
     private var pollTimer: Timer?
     private var lastChangeCount: Int = -1
     private var isSelfCopying: Bool = false
     
     private var globalKeyMonitor: Any?
     private var localKeyMonitor: Any?
+    private var globalMouseMonitor: Any?
+    private var localMouseMonitor: Any?
     private var lastF9Time: TimeInterval = 0
+    
+    // Auto-paste debounce and state
+    private var hasAutoPastedCurrentItem: Bool = false
+    private var lastAutoPasteTimestamp: TimeInterval = 0
     
     // Window manager
     private var clipboardPanel: NSPanel?
@@ -144,7 +158,11 @@ public final class ClipboardService: ObservableObject, @unchecked Sendable {
     
     public var statusSubtitle: String {
         if isEnabled {
-            return "\(items.count) items · F9 x2"
+            if autoPasteOnCommentClick {
+                return "\(items.count) items · Auto-Paste 💬"
+            } else {
+                return "\(items.count) items · F9 x2"
+            }
         } else {
             return "Off"
         }
@@ -156,6 +174,21 @@ public final class ClipboardService: ObservableObject, @unchecked Sendable {
         }
         if UserDefaults.standard.object(forKey: keyAutoPaste) != nil {
             self.autoPaste = UserDefaults.standard.bool(forKey: keyAutoPaste)
+        }
+        if UserDefaults.standard.object(forKey: keyAutoPasteOnCommentClick) != nil {
+            self.autoPasteOnCommentClick = UserDefaults.standard.bool(forKey: keyAutoPasteOnCommentClick)
+        } else {
+            self.autoPasteOnCommentClick = true
+        }
+        if UserDefaults.standard.object(forKey: keyAutoPasteCommentOncePerCopy) != nil {
+            self.autoPasteCommentOncePerCopy = UserDefaults.standard.bool(forKey: keyAutoPasteCommentOncePerCopy)
+        } else {
+            self.autoPasteCommentOncePerCopy = true
+        }
+        if UserDefaults.standard.object(forKey: keyAutoPasteSound) != nil {
+            self.autoPasteSound = UserDefaults.standard.bool(forKey: keyAutoPasteSound)
+        } else {
+            self.autoPasteSound = true
         }
         
         loadHistoryFromDisk()
@@ -187,6 +220,25 @@ public final class ClipboardService: ObservableObject, @unchecked Sendable {
         objectWillChange.send()
     }
     
+    public func setAutoPasteOnCommentClick(_ enable: Bool) {
+        self.autoPasteOnCommentClick = enable
+        UserDefaults.standard.set(enable, forKey: keyAutoPasteOnCommentClick)
+        objectWillChange.send()
+        NotificationCenter.default.post(name: .clipboardItemsDidChange, object: nil)
+    }
+    
+    public func setAutoPasteCommentOncePerCopy(_ enable: Bool) {
+        self.autoPasteCommentOncePerCopy = enable
+        UserDefaults.standard.set(enable, forKey: keyAutoPasteCommentOncePerCopy)
+        objectWillChange.send()
+    }
+    
+    public func setAutoPasteSound(_ enable: Bool) {
+        self.autoPasteSound = enable
+        UserDefaults.standard.set(enable, forKey: keyAutoPasteSound)
+        objectWillChange.send()
+    }
+    
     public func startMonitoring() {
         stopMonitoring()
         
@@ -205,16 +257,16 @@ public final class ClipboardService: ObservableObject, @unchecked Sendable {
             captureCurrentClipboard()
         }
         
-        startKeyMonitoring()
+        startInputMonitoring()
     }
     
     public func stopMonitoring() {
         pollTimer?.invalidate()
         pollTimer = nil
-        stopKeyMonitoring()
+        stopInputMonitoring()
     }
     
-    // MARK: - F9 Double-Tap Shortcut
+    // MARK: - Input Monitoring (F9 Shortcut & Mouse Clicks)
     
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
@@ -228,13 +280,13 @@ public final class ClipboardService: ObservableObject, @unchecked Sendable {
         _ = Shell.run("defaults write -g com.apple.keyboard.fnState -bool \(enabled)")
     }
     
-    private func startKeyMonitoring() {
-        stopKeyMonitoring()
+    private func startInputMonitoring() {
+        stopInputMonitoring()
         
-        // 1. Install Event Tap (captures both standard F9 and physical F9 media key, consuming on trigger)
+        // 1. Install Event Tap for F9
         installEventTap()
         
-        // 2. Global event monitor (matching KeyDown and SystemDefined media keys)
+        // 2. Global event monitor for F9
         globalKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .systemDefined]) { [weak self] event in
             self?.handleNSEvent(event)
         }
@@ -248,9 +300,20 @@ public final class ClipboardService: ObservableObject, @unchecked Sendable {
             }
             return event
         }
+        
+        // 4. Global mouse monitor for comment box detection on click
+        globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseUp]) { [weak self] _ in
+            self?.handleGlobalMouseUp(at: NSEvent.mouseLocation)
+        }
+        
+        // 5. Local mouse monitor
+        localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseUp]) { [weak self] event in
+            self?.handleGlobalMouseUp(at: NSEvent.mouseLocation)
+            return event
+        }
     }
     
-    private func stopKeyMonitoring() {
+    private func stopInputMonitoring() {
         if let tap = eventTap {
             CGEvent.tapEnable(tap: tap, enable: false)
             eventTap = nil
@@ -263,15 +326,18 @@ public final class ClipboardService: ObservableObject, @unchecked Sendable {
             NSEvent.removeMonitor(monitor)
             globalKeyMonitor = nil
         }
-        if let monitor = localEventMonitor {
+        if let monitor = localKeyMonitor {
             NSEvent.removeMonitor(monitor)
             localKeyMonitor = nil
         }
-    }
-    
-    private var localEventMonitor: Any? {
-        get { localKeyMonitor }
-        set { localKeyMonitor = newValue }
+        if let monitor = globalMouseMonitor {
+            NSEvent.removeMonitor(monitor)
+            globalMouseMonitor = nil
+        }
+        if let monitor = localMouseMonitor {
+            NSEvent.removeMonitor(monitor)
+            localMouseMonitor = nil
+        }
     }
     
     private func installEventTap() {
@@ -345,12 +411,10 @@ public final class ClipboardService: ObservableObject, @unchecked Sendable {
     }
     
     private func isF9Event(_ event: NSEvent) -> Bool {
-        // Standard virtual keycode 101
         if event.type == .keyDown && event.keyCode == 101 {
             return true
         }
         
-        // Media key for F9 (Fast-Forward 19, Next Track 17) when Fn is NOT pressed
         if event.type == .systemDefined && event.subtype.rawValue == 8 {
             let data = event.data1
             let keyCode = Int((data & 0xFFFF0000) >> 16)
@@ -371,7 +435,6 @@ public final class ClipboardService: ObservableObject, @unchecked Sendable {
         let delta = now - lastF9Time
         
         if delta <= 0.70 && delta >= 0.04 {
-            // Double press F9!
             lastF9Time = 0
             DispatchQueue.main.async { [weak self] in
                 self?.toggleWindow()
@@ -381,6 +444,205 @@ public final class ClipboardService: ObservableObject, @unchecked Sendable {
             lastF9Time = now
             return false
         }
+    }
+    
+    // MARK: - Comment Box Click Auto-Paste Detection
+    
+    private func handleGlobalMouseUp(at screenPoint: CGPoint) {
+        guard isEnabled, autoPasteOnCommentClick, AXIsProcessTrusted() else { return }
+        
+        // Ensure clipboard history or pasteboard has an item
+        guard let recentItem = items.first ?? fallbackPasteboardItem() else { return }
+        
+        // If "once per copy" mode is active, do not re-paste until new item is copied
+        if autoPasteCommentOncePerCopy && hasAutoPastedCurrentItem {
+            return
+        }
+        
+        // Prevent rapid duplicate triggers
+        let now = ProcessInfo.processInfo.systemUptime
+        if now - lastAutoPasteTimestamp < 1.0 {
+            return
+        }
+        
+        // Wait 120ms for target window/app to finish handling the click and placing the caret
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+            self?.checkAndAutoPasteComment(at: screenPoint, item: recentItem)
+        }
+    }
+    
+    private func checkAndAutoPasteComment(at screenPoint: CGPoint, item: ClipboardItem) {
+        guard isEnabled, autoPasteOnCommentClick, AXIsProcessTrusted() else { return }
+        if autoPasteCommentOncePerCopy && hasAutoPastedCurrentItem { return }
+        
+        var isTargetCommentBox = false
+        let systemWide = AXUIElementCreateSystemWide()
+        
+        // 1. Inspect element directly under the mouse click
+        let primaryScreenHeight = NSScreen.screens.first?.frame.height ?? (NSScreen.main?.frame.height ?? 900)
+        let axY = primaryScreenHeight - screenPoint.y
+        var clickedEl: AXUIElement?
+        if AXUIElementCopyElementAtPosition(systemWide, Float(screenPoint.x), Float(axY), &clickedEl) == .success,
+           let el = clickedEl {
+            if isCommentOrInputBox(el) {
+                isTargetCommentBox = true
+            }
+        }
+        
+        // 2. If not detected directly at point, inspect the focused element of the frontmost application
+        if !isTargetCommentBox, let front = NSWorkspace.shared.frontmostApplication {
+            // Skip Switch's own windows
+            if front.processIdentifier == ProcessInfo.processInfo.processIdentifier {
+                return
+            }
+            let appEl = AXUIElementCreateApplication(front.processIdentifier)
+            var focusedEl: AnyObject?
+            if AXUIElementCopyAttributeValue(appEl, kAXFocusedUIElementAttribute as CFString, &focusedEl) == .success,
+               let el = focusedEl as! AXUIElement? {
+                if isCommentOrInputBox(el) {
+                    isTargetCommentBox = true
+                }
+            }
+        }
+        
+        guard isTargetCommentBox else { return }
+        
+        // Execute Auto-Paste
+        executeCommentBoxAutoPaste(item: item)
+    }
+    
+    private func isCommentOrInputBox(_ element: AXUIElement) -> Bool {
+        // Never trigger inside Switch itself
+        var pid: pid_t = 0
+        if AXUIElementGetPid(element, &pid) == .success, pid == ProcessInfo.processInfo.processIdentifier {
+            return false
+        }
+        
+        var roleVal: AnyObject?
+        AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &roleVal)
+        let role = roleVal as? String ?? ""
+        
+        var subroleVal: AnyObject?
+        AXUIElementCopyAttributeValue(element, kAXSubroleAttribute as CFString, &subroleVal)
+        let subrole = subroleVal as? String ?? ""
+        
+        var descVal: AnyObject?
+        AXUIElementCopyAttributeValue(element, kAXRoleDescriptionAttribute as CFString, &descVal)
+        let desc = (descVal as? String ?? "").lowercased()
+        
+        // Filter out non-input structural elements
+        if role == "AXWindow" || role == "AXWebArea" || role == "AXScrollArea" ||
+           role == "AXScrollBar" || role == "AXMenu" || role == "AXMenuBar" || role == "AXMenuBarItem" {
+            return false
+        }
+        
+        // 1. Primary comment box & text field roles
+        if role == "AXTextArea" || role == "AXTextField" || role == "AXComboBox" {
+            return true
+        }
+        
+        // 2. Rich text & search subroles
+        if subrole == "AXRichEdit" || subrole == "AXSearchField" {
+            return true
+        }
+        
+        // 3. Descriptive matches for web comment boxes & editors
+        if desc.contains("text entry") || desc.contains("text area") || desc.contains("comment") ||
+           desc.contains("edit text") || desc.contains("editable") || desc.contains("editor") {
+            return true
+        }
+        
+        // 4. Settable value attribute indicates editable input field
+        var isSettable: DarwinBoolean = false
+        if AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &isSettable) == .success && isSettable.boolValue {
+            return true
+        }
+        
+        // 5. Check if element has insertion caret / text selection range
+        var selectedRange: AnyObject?
+        if AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &selectedRange) == .success {
+            var rangeSettable: DarwinBoolean = false
+            if AXUIElementIsAttributeSettable(element, kAXSelectedTextRangeAttribute as CFString, &rangeSettable) == .success && rangeSettable.boolValue {
+                return true
+            }
+        }
+        
+        // 6. Check parent hierarchy (e.g. placeholder text span, paragraph or div inside a rich comment box)
+        if role == "AXStaticText" || role == "AXGroup" || role == "AXGenericElement" || role == "AXParagraph" {
+            var curr = element
+            for _ in 0..<3 {
+                var parentVal: AnyObject?
+                if AXUIElementCopyAttributeValue(curr, kAXParentAttribute as CFString, &parentVal) == .success,
+                   let parent = parentVal as! AXUIElement? {
+                    var pRole: AnyObject?
+                    AXUIElementCopyAttributeValue(parent, kAXRoleAttribute as CFString, &pRole)
+                    let parentRole = pRole as? String ?? ""
+                    if parentRole == "AXTextArea" || parentRole == "AXTextField" {
+                        return true
+                    }
+                    var pSettable: DarwinBoolean = false
+                    if AXUIElementIsAttributeSettable(parent, kAXValueAttribute as CFString, &pSettable) == .success && pSettable.boolValue {
+                        return true
+                    }
+                    curr = parent
+                } else {
+                    break
+                }
+            }
+        }
+        
+        return false
+    }
+    
+    private func ensurePasteboardHasItem(_ item: ClipboardItem) {
+        let pb = NSPasteboard.general
+        switch item.type {
+        case .text:
+            if let text = item.textContent, pb.string(forType: .string) != text {
+                isSelfCopying = true
+                pb.clearContents()
+                pb.setString(text, forType: .string)
+                lastChangeCount = pb.changeCount
+            }
+        case .image:
+            isSelfCopying = true
+            pb.clearContents()
+            if let image = loadImage(for: item) {
+                pb.writeObjects([image])
+            }
+            lastChangeCount = pb.changeCount
+        }
+    }
+    
+    private func executeCommentBoxAutoPaste(item: ClipboardItem) {
+        lastAutoPasteTimestamp = ProcessInfo.processInfo.systemUptime
+        hasAutoPastedCurrentItem = true
+        
+        // Ensure clipboard has this item loaded
+        ensurePasteboardHasItem(item)
+        
+        // Send Command + V
+        simulatePasteShortcut()
+        
+        if autoPasteSound {
+            NSSound(named: "Tink")?.play()
+        }
+        
+        NotificationCenter.default.post(name: .clipboardAutoPastedComment, object: item)
+    }
+    
+    private func fallbackPasteboardItem() -> ClipboardItem? {
+        let pb = NSPasteboard.general
+        if let string = pb.string(forType: .string), !string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let hash = SHA256.hash(data: Data(string.utf8)).compactMap { String(format: "%02x", $0) }.joined()
+            return ClipboardItem(
+                type: .text,
+                textContent: string,
+                byteSize: string.utf8.count,
+                contentHash: hash
+            )
+        }
+        return nil
     }
     
     // MARK: - Clipboard Polling
@@ -431,6 +693,7 @@ public final class ClipboardService: ObservableObject, @unchecked Sendable {
                 var item = items.remove(at: existingIndex)
                 item.createdAt = Date()
                 items.insert(item, at: 0)
+                hasAutoPastedCurrentItem = false // Rearm auto-paste for refreshed item
                 saveHistoryToDisk()
                 NotificationCenter.default.post(name: .clipboardItemsDidChange, object: nil)
                 return
@@ -478,6 +741,7 @@ public final class ClipboardService: ObservableObject, @unchecked Sendable {
                 var item = items.remove(at: existingIndex)
                 item.createdAt = Date()
                 items.insert(item, at: 0)
+                hasAutoPastedCurrentItem = false // Rearm auto-paste for refreshed item
                 saveHistoryToDisk()
                 NotificationCenter.default.post(name: .clipboardItemsDidChange, object: nil)
                 return
@@ -501,6 +765,7 @@ public final class ClipboardService: ObservableObject, @unchecked Sendable {
     
     private func addItem(_ item: ClipboardItem) {
         items.insert(item, at: 0)
+        hasAutoPastedCurrentItem = false // Fresh item is armed and ready to auto-paste into comment box
         
         // Prune older items beyond maxItems (50)
         while items.count > Self.maxItems {
@@ -564,12 +829,13 @@ public final class ClipboardService: ObservableObject, @unchecked Sendable {
         }
         
         lastChangeCount = pb.changeCount
+        hasAutoPastedCurrentItem = false // Rearm auto-paste on manual selection
         NSSound(named: "Tink")?.play()
         
         // Close clipboard window
         closeWindow()
         
-        // Optional Auto-Paste simulation via ⌘V
+        // Optional Auto-Paste simulation via ⌘V on selection
         if autoPaste && autoPasteIfEnabled {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
                 self?.simulatePasteShortcut()
@@ -581,14 +847,24 @@ public final class ClipboardService: ObservableObject, @unchecked Sendable {
         guard AXIsProcessTrusted() else { return }
         
         let src = CGEventSource(stateID: .combinedSessionState)
-        // 9 is kVK_ANSI_V
-        let keyDown = CGEvent(keyboardEventSource: src, virtualKey: 9, keyDown: true)
-        keyDown?.flags = .maskCommand
-        let keyUp = CGEvent(keyboardEventSource: src, virtualKey: 9, keyDown: false)
-        keyUp?.flags = .maskCommand
+        // Keycode 55 = Command, Keycode 9 = V
+        let cmdDown = CGEvent(keyboardEventSource: src, virtualKey: 55, keyDown: true)
+        cmdDown?.flags = .maskCommand
+        cmdDown?.post(tap: .cghidEventTap)
         
-        keyDown?.post(tap: .cghidEventTap)
-        keyUp?.post(tap: .cghidEventTap)
+        let vDown = CGEvent(keyboardEventSource: src, virtualKey: 9, keyDown: true)
+        vDown?.flags = .maskCommand
+        vDown?.post(tap: .cghidEventTap)
+        
+        Thread.sleep(forTimeInterval: 0.02)
+        
+        let vUp = CGEvent(keyboardEventSource: src, virtualKey: 9, keyDown: false)
+        vUp?.flags = .maskCommand
+        vUp?.post(tap: .cghidEventTap)
+        
+        let cmdUp = CGEvent(keyboardEventSource: src, virtualKey: 55, keyDown: false)
+        cmdUp?.flags = []
+        cmdUp?.post(tap: .cghidEventTap)
     }
     
     // MARK: - Image Helpers & Cache
@@ -670,7 +946,6 @@ public final class ClipboardService: ObservableObject, @unchecked Sendable {
         
         guard let panel = clipboardPanel else { return }
         
-        // Position window: check for saved user-dragged position, otherwise near the searchbar (top right)
         positionPanelNearSearchbar(panel)
         
         NSApp.activate(ignoringOtherApps: true)
