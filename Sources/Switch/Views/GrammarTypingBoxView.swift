@@ -7,19 +7,13 @@ final class GrammarTypingBoxState: ObservableObject {
             handleInputChanged()
         }
     }
-    @Published var polishedText: String = ""
-    @Published var selectedStyle: WritingStyle = .fixOnly {
-        didSet {
-            triggerAIPolish()
-        }
-    }
+    @Published var selectedStyle: WritingStyle = .fixOnly
+    @Published var selectedFilter: GrammarCategory? = nil
+    @Published var issues: [GrammarIssue] = []
+    @Published var overallScore: Int = 100
     @Published var isAILoading: Bool = false
     @Published var copiedConfirmation: Bool = false
     @Published var isShowingSettings: Bool = false
-    @Published var correctionsCount: Int = 0
-    @Published var changes: [String] = []
-    @Published var showDiff: Bool = false
-    @Published var isSideBySide: Bool = true
     
     // API Key inputs for settings
     @Published var geminiKeyInput: String = ""
@@ -28,7 +22,7 @@ final class GrammarTypingBoxState: ObservableObject {
     @Published var ollamaEndpointInput: String = ""
     @Published var ollamaModelInput: String = ""
     
-    private var aiDebounceWorkItem: DispatchWorkItem?
+    private var scanDebounceWorkItem: DispatchWorkItem?
     
     init() {
         self.selectedStyle = GrammarCoachService.shared.currentStyle
@@ -39,75 +33,109 @@ final class GrammarTypingBoxState: ObservableObject {
         self.ollamaModelInput = GrammarAIService.shared.ollamaModel
     }
     
+    public var activeIssues: [GrammarIssue] {
+        issues.filter { !$0.isDismissed && !$0.isApplied }
+    }
+    
+    public var filteredIssues: [GrammarIssue] {
+        if let cat = selectedFilter {
+            return activeIssues.filter { $0.category == cat }
+        }
+        return activeIssues
+    }
+    
+    public var correctnessCount: Int {
+        activeIssues.filter { $0.category == .correctness }.count
+    }
+    
+    public var clarityCount: Int {
+        activeIssues.filter { $0.category == .clarity }.count
+    }
+    
+    public var engagementCount: Int {
+        activeIssues.filter { $0.category == .engagement }.count
+    }
+    
+    public var wordCount: Int {
+        inputText.split { $0.isWhitespace || $0.isNewline }.count
+    }
+    
+    public var charCount: Int {
+        inputText.count
+    }
+    
+    public var readingTimeFormatted: String {
+        let mins = max(0.1, Double(wordCount) / 200.0)
+        return String(format: "%.1f min", mins)
+    }
+    
     private func handleInputChanged() {
+        scanDebounceWorkItem?.cancel()
         let trimmed = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
-            polishedText = ""
-            correctionsCount = 0
-            changes = []
-            isAILoading = false
-            aiDebounceWorkItem?.cancel()
-            return
-        }
-        
-        // Fast instant local preview using native engine
-        let fast = GrammarCoachService.shared.polishNative(inputText, style: selectedStyle)
-        self.polishedText = fast.polished
-        self.correctionsCount = fast.correctionsCount
-        self.changes = fast.changes
-        
-        // Debounce LLM query (400ms)
-        triggerAIPolish()
-    }
-    
-    public func triggerAIPolish() {
-        aiDebounceWorkItem?.cancel()
-        let textToPolish = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !textToPolish.isEmpty else {
-            polishedText = ""
-            correctionsCount = 0
-            changes = []
+            issues = []
+            overallScore = 100
             isAILoading = false
             return
         }
         
-        let style = selectedStyle
         let workItem = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
-            DispatchQueue.main.async { self.isAILoading = true }
+            let text = self.inputText
+            let scanned = GrammarCoachService.shared.scanIssues(in: text)
+            let score = GrammarCoachService.shared.calculateScore(text: text, issues: scanned)
             
-            GrammarCoachService.shared.polishTextWithAI(textToPolish, style: style) { [weak self] polished, count, changes in
-                DispatchQueue.main.async {
-                    guard let self = self,
-                          self.inputText.trimmingCharacters(in: .whitespacesAndNewlines) == textToPolish else { return }
-                    self.polishedText = polished
-                    self.correctionsCount = max(count, changes.count)
-                    self.changes = changes
-                    self.isAILoading = false
-                }
+            DispatchQueue.main.async {
+                guard self.inputText == text else { return }
+                self.issues = scanned
+                self.overallScore = score
             }
         }
-        aiDebounceWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: workItem)
+        scanDebounceWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: workItem)
     }
     
-    public func saveSettings() {
-        let ai = GrammarAIService.shared
-        ai.geminiApiKey = geminiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        ai.groqApiKey = groqKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        ai.openaiApiKey = openAIKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        ai.ollamaEndpoint = ollamaEndpointInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        ai.ollamaModel = ollamaModelInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        isShowingSettings = false
-        triggerAIPolish()
+    // MARK: - Actions
+    
+    public func acceptIssue(_ issue: GrammarIssue) {
+        let updated = GrammarCoachService.shared.applyIssue(issue, to: inputText)
+        inputText = updated
+    }
+    
+    public func dismissIssue(_ issue: GrammarIssue) {
+        if let idx = issues.firstIndex(where: { $0.id == issue.id }) {
+            issues[idx].isDismissed = true
+            overallScore = GrammarCoachService.shared.calculateScore(text: inputText, issues: activeIssues)
+        }
+    }
+    
+    public func acceptAllIssues() {
+        guard !activeIssues.isEmpty else { return }
+        let updated = GrammarCoachService.shared.applyAllIssues(activeIssues, to: inputText)
+        inputText = updated
+    }
+    
+    public func triggerAIPolish(style: WritingStyle) {
+        let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        
+        self.selectedStyle = style
+        self.isAILoading = true
+        
+        GrammarCoachService.shared.polishTextWithAI(text, style: style) { [weak self] polished, _, _ in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.isAILoading = false
+                self.inputText = polished
+            }
+        }
     }
     
     public func copyToClipboard() {
-        let text = polishedText.isEmpty ? inputText : polishedText
-        guard !text.isEmpty else { return }
+        guard !inputText.isEmpty else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.declareTypes([.string], owner: nil)
-        NSPasteboard.general.setString(text, forType: .string)
+        NSPasteboard.general.setString(inputText, forType: .string)
         
         withAnimation(.easeInOut(duration: 0.15)) {
             copiedConfirmation = true
@@ -119,9 +147,14 @@ final class GrammarTypingBoxState: ObservableObject {
         }
     }
     
-    public func replaceInputWithPolished() {
-        guard !polishedText.isEmpty else { return }
-        inputText = polishedText
+    public func saveSettings() {
+        let ai = GrammarAIService.shared
+        ai.geminiApiKey = geminiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        ai.groqApiKey = groqKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        ai.openaiApiKey = openAIKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        ai.ollamaEndpoint = ollamaEndpointInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        ai.ollamaModel = ollamaModelInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        isShowingSettings = false
     }
 }
 
@@ -134,26 +167,31 @@ public struct GrammarTypingBoxView: View {
     
     public var body: some View {
         ZStack {
-            // Dark glassmorphic background
             VisualEffectBackground(material: .hudWindow, blendingMode: .behindWindow)
                 .ignoresSafeArea()
             
-            VStack(spacing: 12) {
-                // Header Bar
-                headerView
+            HStack(spacing: 0) {
+                // Left Column: Main Editor & GrammarlyGO Actions
+                VStack(spacing: 12) {
+                    headerBar
+                    grammarlyGoActionBar
+                    editorArea
+                    footerBar
+                }
+                .padding(16)
                 
-                // Style Selector Tabs
-                styleTabsView
+                // Vertical Divider
+                Rectangle()
+                    .fill(Color.white.opacity(0.10))
+                    .frame(width: 1)
+                    .ignoresSafeArea()
                 
-                // Main Comparison Editor
-                editorComparisonView
-                
-                // Footer Bar
-                footerActionBar
+                // Right Column: Grammarly Suggestion Cards Deck
+                sidebarCardsDeck
+                    .frame(width: 290)
             }
-            .padding(16)
         }
-        .frame(minWidth: 620, minHeight: 480)
+        .frame(minWidth: 840, minHeight: 540)
         .preferredColorScheme(.dark)
         .sheet(isPresented: $state.isShowingSettings) {
             aiSettingsSheet
@@ -162,30 +200,29 @@ public struct GrammarTypingBoxView: View {
     
     // MARK: - Header Bar
     
-    private var headerView: some View {
-        HStack(spacing: 12) {
-            // Icon Badge
+    private var headerBar: some View {
+        HStack(spacing: 10) {
             ZStack {
                 Circle()
                     .fill(
                         LinearGradient(
-                            colors: [Color(red: 0.20, green: 0.60, blue: 1.0), Color(red: 0.10, green: 0.35, blue: 0.85)],
+                            colors: [Color(red: 0.18, green: 0.76, blue: 0.52), Color(red: 0.10, green: 0.55, blue: 0.38)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
                     )
-                    .frame(width: 34, height: 34)
-                    .shadow(color: Color.blue.opacity(0.35), radius: 6, x: 0, y: 2)
+                    .frame(width: 32, height: 32)
+                    .shadow(color: Color.green.opacity(0.3), radius: 5, x: 0, y: 2)
                 
-                Image(systemName: "character.cursor.ibeam")
+                Image(systemName: "checkmark.seal.fill")
                     .font(.system(size: 15, weight: .bold))
                     .foregroundColor(.white)
             }
             
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 8) {
-                    Text("Grammar & Writing Coach")
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    Text("Grammarly Writing Assistant")
+                        .font(.system(size: 14.5, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
                     
                     // Engine Picker Menu
@@ -194,7 +231,6 @@ public struct GrammarTypingBoxView: View {
                             ForEach(AIEngine.allCases) { engine in
                                 Button(action: {
                                     aiService.selectedEngine = engine
-                                    state.triggerAIPolish()
                                 }) {
                                     HStack {
                                         Text(engine.title)
@@ -205,9 +241,7 @@ public struct GrammarTypingBoxView: View {
                                 }
                             }
                         }
-                        
                         Divider()
-                        
                         Button(action: {
                             state.isShowingSettings = true
                         }) {
@@ -219,21 +253,21 @@ public struct GrammarTypingBoxView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: aiService.selectedEngine.icon)
-                                .font(.system(size: 10))
+                                .font(.system(size: 9.5))
                             Text(aiService.selectedEngine.shortName)
                                 .font(.system(size: 11, weight: .semibold))
                             Image(systemName: "chevron.down")
-                                .font(.system(size: 8))
+                                .font(.system(size: 7.5))
                                 .opacity(0.7)
                         }
                         .foregroundColor(Color(red: 0.38, green: 0.75, blue: 0.98))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3.5)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
                         .background(
-                            RoundedRectangle(cornerRadius: 6)
+                            RoundedRectangle(cornerRadius: 5)
                                 .fill(Color.blue.opacity(0.18))
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 6)
+                                    RoundedRectangle(cornerRadius: 5)
                                         .stroke(Color.blue.opacity(0.3), lineWidth: 0.8)
                                 )
                         )
@@ -242,27 +276,12 @@ public struct GrammarTypingBoxView: View {
                     .fixedSize()
                 }
                 
-                Text(state.selectedStyle.description)
+                Text("Real-time grammar, spelling, clarity & AI rewrites")
                     .font(.system(size: 11, weight: .regular))
-                    .foregroundColor(.white.opacity(0.65))
+                    .foregroundColor(.white.opacity(0.6))
             }
             
             Spacer()
-            
-            // View Mode Toggle (Side-by-Side vs Stacked)
-            Button(action: {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    state.isSideBySide.toggle()
-                }
-            }) {
-                Image(systemName: state.isSideBySide ? "rectangle.split.2x1" : "rectangle.split.1x2")
-                    .font(.system(size: 13))
-                    .foregroundColor(.white.opacity(0.7))
-                    .padding(6)
-                    .background(RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(0.08)))
-            }
-            .buttonStyle(.plain)
-            .help(state.isSideBySide ? "Switch to Stacked View" : "Switch to Side-by-Side View")
             
             // Settings Button
             Button(action: {
@@ -282,7 +301,7 @@ public struct GrammarTypingBoxView: View {
                 coach.hideTypingBox()
             }) {
                 Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 18))
+                    .font(.system(size: 17))
                     .foregroundColor(.white.opacity(0.45))
             }
             .buttonStyle(.plain)
@@ -290,89 +309,88 @@ public struct GrammarTypingBoxView: View {
         }
     }
     
-    // MARK: - Style Selector Tabs
+    // MARK: - GrammarlyGO Actions Bar
     
-    private var styleTabsView: some View {
+    private var grammarlyGoActionBar: some View {
         HStack(spacing: 6) {
             ForEach(WritingStyle.allCases) { style in
                 Button(action: {
-                    withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
-                        state.selectedStyle = style
-                        coach.currentStyle = style
-                    }
+                    state.triggerAIPolish(style: style)
                 }) {
-                    HStack(spacing: 5) {
+                    HStack(spacing: 4) {
                         Image(systemName: style.icon)
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 10.5, weight: .semibold))
                         Text(style.badge)
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.system(size: 11.5, weight: .medium))
                     }
-                    .foregroundColor(state.selectedStyle == style ? .white : .white.opacity(0.65))
-                    .padding(.horizontal, 11)
-                    .padding(.vertical, 6)
+                    .foregroundColor(state.selectedStyle == style ? .white : .white.opacity(0.75))
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
                     .background(
-                        ZStack {
-                            if state.selectedStyle == style {
-                                RoundedRectangle(cornerRadius: 7)
-                                    .fill(
-                                        LinearGradient(
-                                            colors: [Color(red: 0.25, green: 0.55, blue: 0.95), Color(red: 0.15, green: 0.40, blue: 0.85)],
-                                            startPoint: .top,
-                                            endPoint: .bottom
-                                        )
-                                    )
-                                    .shadow(color: Color.blue.opacity(0.3), radius: 4, x: 0, y: 1)
-                            } else {
-                                RoundedRectangle(cornerRadius: 7)
-                                    .fill(Color.white.opacity(0.06))
-                            }
-                        }
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(state.selectedStyle == style ? Color.blue.opacity(0.35) : Color.white.opacity(0.06))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .stroke(state.selectedStyle == style ? Color.blue.opacity(0.6) : Color.clear, lineWidth: 0.8)
+                            )
                     )
                 }
                 .buttonStyle(.plain)
+                .disabled(state.inputText.isEmpty || state.isAILoading)
             }
             Spacer()
         }
     }
     
-    // MARK: - Editor Comparison View
+    // MARK: - Main Editor Area
     
-    private var editorComparisonView: some View {
-        Group {
-            if state.isSideBySide {
-                HStack(spacing: 12) {
-                    inputBoxView
-                    outputBoxView
+    private var editorArea: some View {
+        VStack(spacing: 0) {
+            ZStack(alignment: .topLeading) {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.black.opacity(0.35))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color.white.opacity(0.12), lineWidth: 0.8)
+                    )
+                
+                if state.inputText.isEmpty {
+                    Text("Type or paste your text here...\n\nSwitch checks your grammar in real-time, highlights spelling errors, wordy phrases, and suggests 1-click improvements just like Grammarly.")
+                        .font(.system(size: 13.5, weight: .regular))
+                        .foregroundColor(.white.opacity(0.28))
+                        .padding(14)
+                        .allowsHitTesting(false)
                 }
-            } else {
-                VStack(spacing: 12) {
-                    inputBoxView
-                    outputBoxView
-                }
+                
+                TextEditor(text: $state.inputText)
+                    .font(.system(size: 13.5, weight: .regular))
+                    .foregroundColor(.white)
+                    .scrollContentBackground(.hidden)
+                    .padding(10)
             }
-        }
-    }
-    
-    // MARK: - Input Box View
-    
-    private var inputBoxView: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Text("Original Text")
-                    .font(.system(size: 11.5, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.7))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            
+            // Text Editor Metadata Bar
+            HStack(spacing: 12) {
+                if state.charCount > 0 {
+                    Text("\(state.wordCount) words")
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.5))
+                    Text("·")
+                        .foregroundColor(.white.opacity(0.3))
+                    Text("\(state.charCount) characters")
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.5))
+                    Text("·")
+                        .foregroundColor(.white.opacity(0.3))
+                    Text("\(state.readingTimeFormatted) read")
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.5))
+                }
                 
                 Spacer()
                 
-                let wordCount = state.inputText.split { $0.isWhitespace || $0.isNewline }.count
-                let charCount = state.inputText.count
-                if charCount > 0 {
-                    Text("\(wordCount) words · \(charCount) chars")
-                        .font(.system(size: 10.5))
-                        .foregroundColor(.white.opacity(0.4))
-                }
-                
-                // Paste
+                // Paste Button
                 Button(action: {
                     if let str = NSPasteboard.general.string(forType: .string), !str.isEmpty {
                         state.inputText = str
@@ -382,7 +400,7 @@ public struct GrammarTypingBoxView: View {
                         Image(systemName: "doc.on.clipboard")
                             .font(.system(size: 10))
                         Text("Paste")
-                            .font(.system(size: 10.5, weight: .medium))
+                            .font(.system(size: 11, weight: .medium))
                     }
                     .foregroundColor(.white.opacity(0.75))
                     .padding(.horizontal, 6)
@@ -391,243 +409,89 @@ public struct GrammarTypingBoxView: View {
                 }
                 .buttonStyle(.plain)
                 
-                // Clear
+                // Clear Button
                 if !state.inputText.isEmpty {
                     Button("Clear") {
                         state.inputText = ""
                     }
-                    .font(.system(size: 10.5))
+                    .font(.system(size: 11))
                     .foregroundColor(.white.opacity(0.5))
                     .buttonStyle(.plain)
                 }
             }
-            
-            ZStack(alignment: .topLeading) {
-                RoundedRectangle(cornerRadius: 9)
-                    .fill(Color.black.opacity(0.32))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 9)
-                            .stroke(Color.white.opacity(0.12), lineWidth: 0.8)
-                    )
-                
-                if state.inputText.isEmpty {
-                    Text("Type or paste any English text here...\n\nSwitch will automatically detect and fix spelling, punctuation, grammar, and phrasing using \(aiService.selectedEngine.title).")
-                        .font(.system(size: 13, weight: .regular))
-                        .foregroundColor(.white.opacity(0.28))
-                        .padding(12)
-                        .allowsHitTesting(false)
-                }
-                
-                TextEditor(text: $state.inputText)
-                    .font(.system(size: 13, weight: .regular))
-                    .foregroundColor(.white)
-                    .scrollContentBackground(.hidden)
-                    .padding(8)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.top, 6)
+            .padding(.horizontal, 4)
         }
     }
     
-    // MARK: - Output Box View
+    // MARK: - Footer Bar
     
-    private var outputBoxView: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
+    private var footerBar: some View {
+        HStack(spacing: 10) {
+            // Live Status Pill
+            if state.isAILoading {
                 HStack(spacing: 5) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundColor(Color(red: 0.38, green: 0.75, blue: 0.98))
-                    Text("Improved (\(state.selectedStyle.badge))")
-                        .font(.system(size: 11.5, weight: .semibold))
-                        .foregroundColor(.white)
-                }
-                
-                if state.isAILoading {
                     ProgressView()
                         .scaleEffect(0.5)
                         .frame(width: 14, height: 14)
-                    Text("AI Polishing...")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.white.opacity(0.55))
-                } else if state.correctionsCount > 0 {
-                    Text("✨ \(state.correctionsCount) improvements")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(Color(red: 0.28, green: 0.76, blue: 0.52))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(RoundedRectangle(cornerRadius: 4).fill(Color.green.opacity(0.15)))
+                    Text("Refining with \(aiService.selectedEngine.shortName)...")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.white.opacity(0.6))
                 }
-                
-                Spacer()
-                
-                if !state.polishedText.isEmpty {
-                    // Diff toggle
-                    Button(action: {
-                        state.showDiff.toggle()
-                    }) {
-                        HStack(spacing: 3) {
-                            Image(systemName: state.showDiff ? "eye.fill" : "eye")
-                                .font(.system(size: 10))
-                            Text(state.showDiff ? "Text" : "Diff")
-                                .font(.system(size: 10.5, weight: .medium))
-                        }
-                        .foregroundColor(state.showDiff ? Color.blue : .white.opacity(0.75))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2.5)
-                        .background(RoundedRectangle(cornerRadius: 4).fill(Color.white.opacity(0.08)))
-                    }
-                    .buttonStyle(.plain)
-                    
-                    // Copy
-                    Button(action: {
-                        state.copyToClipboard()
-                    }) {
-                        HStack(spacing: 3) {
-                            Image(systemName: state.copiedConfirmation ? "checkmark" : "doc.on.doc")
-                                .font(.system(size: 10))
-                            Text(state.copiedConfirmation ? "Copied" : "Copy")
-                                .font(.system(size: 10.5, weight: .medium))
-                        }
-                        .foregroundColor(state.copiedConfirmation ? Color.green : .white.opacity(0.75))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2.5)
-                        .background(RoundedRectangle(cornerRadius: 4).fill(Color.white.opacity(0.08)))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            
-            ZStack(alignment: .topLeading) {
-                RoundedRectangle(cornerRadius: 9)
-                    .fill(Color(red: 0.10, green: 0.14, blue: 0.22).opacity(0.6))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 9)
-                            .stroke(
-                                state.isAILoading
-                                    ? Color(red: 0.38, green: 0.75, blue: 0.98).opacity(0.5)
-                                    : Color(red: 0.20, green: 0.35, blue: 0.55).opacity(0.35),
-                                lineWidth: 0.8
-                            )
-                    )
-                
-                if state.inputText.isEmpty {
-                    Text("Your improved text will appear here automatically...")
-                        .font(.system(size: 13, weight: .regular))
-                        .foregroundColor(.white.opacity(0.25))
-                        .padding(12)
-                        .allowsHitTesting(false)
-                } else if state.showDiff && !state.polishedText.isEmpty {
-                    diffHighlightView
-                        .padding(10)
-                } else {
-                    ScrollView {
-                        Text(state.polishedText.isEmpty ? state.inputText : state.polishedText)
-                            .font(.system(size: 13, weight: .regular))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(10)
-                            .textSelection(.enabled)
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-    }
-    
-    // MARK: - Diff Highlighter
-    
-    private var diffHighlightView: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Changes made:")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.6))
-                
-                if state.changes.isEmpty {
-                    Text("No errors found. Your text is already grammatically flawless!")
-                        .font(.system(size: 12))
+            } else if state.activeIssues.isEmpty && !state.inputText.isEmpty {
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark.circle.fill")
                         .foregroundColor(Color.green)
-                } else {
-                    ForEach(state.changes.prefix(8), id: \.self) { change in
-                        HStack(alignment: .top, spacing: 6) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 10))
-                                .foregroundColor(Color.green.opacity(0.8))
-                                .padding(.top, 2)
-                            Text(change)
-                                .font(.system(size: 11.5, weight: .regular))
-                                .foregroundColor(.white.opacity(0.85))
-                        }
-                    }
+                        .font(.system(size: 11))
+                    Text("Flawless! No issues found")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(Color.green.opacity(0.9))
                 }
-                
-                Divider().background(Color.white.opacity(0.1))
-                
-                Text(state.polishedText)
-                    .font(.system(size: 13, weight: .regular))
-                    .foregroundColor(.white)
-                    .textSelection(.enabled)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-    
-    // MARK: - Footer Action Bar
-    
-    private var footerActionBar: some View {
-        HStack(spacing: 10) {
-            // Engine Status Pill
-            HStack(spacing: 5) {
-                Circle()
-                    .fill(aiService.isAIQuerying ? Color.orange : Color.green)
-                    .frame(width: 7, height: 7)
-                Text(aiService.lastEngineUsed)
+            } else if !state.activeIssues.isEmpty {
+                Text("\(state.activeIssues.count) suggestions ready")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.white.opacity(0.7))
-                if aiService.lastQueryDurationMs > 0 {
-                    Text("(\(aiService.lastQueryDurationMs)ms)")
-                        .font(.system(size: 10))
-                        .foregroundColor(.white.opacity(0.4))
-                }
+                    .foregroundColor(.white.opacity(0.6))
             }
             
             Spacer()
             
-            // Re-polish Button
-            Button(action: {
-                state.triggerAIPolish()
-            }) {
-                HStack(spacing: 4) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 11))
-                    Text("Polish with AI")
-                        .font(.system(size: 12, weight: .semibold))
-                }
-                .foregroundColor(.white)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 7)
-                .background(
-                    RoundedRectangle(cornerRadius: 7)
-                        .fill(
-                            LinearGradient(
-                                colors: [Color(red: 0.20, green: 0.50, blue: 0.95), Color(red: 0.12, green: 0.38, blue: 0.85)],
-                                startPoint: .top,
-                                endPoint: .bottom
+            // Accept All Button
+            if !state.activeIssues.isEmpty {
+                Button(action: {
+                    state.acceptAllIssues()
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 11))
+                        Text("Accept All (\(state.activeIssues.count))")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .background(
+                        RoundedRectangle(cornerRadius: 7)
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color(red: 0.18, green: 0.76, blue: 0.52), Color(red: 0.10, green: 0.55, blue: 0.38)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
                             )
-                        )
-                )
+                            .shadow(color: Color.green.opacity(0.25), radius: 4, x: 0, y: 1)
+                    )
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
-            .disabled(state.inputText.isEmpty || state.isAILoading)
             
-            // Copy Polished Text
+            // Copy Button
             Button(action: {
                 state.copyToClipboard()
             }) {
                 HStack(spacing: 4) {
                     Image(systemName: state.copiedConfirmation ? "checkmark.circle.fill" : "doc.on.doc.fill")
                         .font(.system(size: 11))
-                    Text(state.copiedConfirmation ? "Copied!" : "Copy Text")
+                    Text(state.copiedConfirmation ? "Copied!" : "Copy")
                         .font(.system(size: 12, weight: .medium))
                 }
                 .foregroundColor(.white.opacity(0.9))
@@ -638,10 +502,9 @@ public struct GrammarTypingBoxView: View {
             .buttonStyle(.plain)
             .disabled(state.inputText.isEmpty)
             
-            // Paste into Previous App
+            // Paste in App Button
             Button(action: {
-                let text = state.polishedText.isEmpty ? state.inputText : state.polishedText
-                coach.pasteIntoPreviousApp(text: text)
+                coach.pasteIntoPreviousApp(text: state.inputText)
             }) {
                 HStack(spacing: 4) {
                     Image(systemName: "arrow.uturn.forward.circle.fill")
@@ -656,8 +519,265 @@ public struct GrammarTypingBoxView: View {
             }
             .buttonStyle(.plain)
             .disabled(state.inputText.isEmpty)
-            .help("Pasting directly into the active comment box or document")
+            .help("Paste directly into your active document or chat")
         }
+    }
+    
+    // MARK: - Sidebar Cards Deck
+    
+    private var sidebarCardsDeck: some View {
+        VStack(spacing: 12) {
+            // Overall Score Card
+            scoreHeaderCard
+            
+            // Category Filter Pills
+            categoryFilterPills
+            
+            // Cards List
+            cardsScrollView
+        }
+        .padding(14)
+        .background(Color.black.opacity(0.25))
+    }
+    
+    // MARK: - Score Header Card
+    
+    private var scoreHeaderCard: some View {
+        HStack(spacing: 12) {
+            // Circular Score Gauge
+            ZStack {
+                Circle()
+                    .stroke(Color.white.opacity(0.10), lineWidth: 4)
+                    .frame(width: 44, height: 44)
+                
+                Circle()
+                    .trim(from: 0, to: CGFloat(state.overallScore) / 100.0)
+                    .stroke(
+                        state.overallScore >= 90
+                            ? Color(red: 0.28, green: 0.76, blue: 0.52)
+                            : (state.overallScore >= 70 ? Color(red: 0.95, green: 0.72, blue: 0.20) : Color(red: 0.95, green: 0.35, blue: 0.35)),
+                        style: StrokeStyle(lineWidth: 4, lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(-90))
+                    .frame(width: 44, height: 44)
+                
+                Text("\(state.overallScore)")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+            }
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(
+                    state.overallScore >= 95
+                        ? "Flawless Quality"
+                        : (state.overallScore >= 80 ? "Good Quality" : "Needs Review")
+                )
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundColor(.white)
+                
+                Text(
+                    state.activeIssues.isEmpty
+                        ? (state.inputText.isEmpty ? "Enter text to check" : "Zero errors detected")
+                        : "\(state.activeIssues.count) suggestions found"
+                )
+                .font(.system(size: 11, weight: .regular))
+                .foregroundColor(.white.opacity(0.6))
+            }
+            
+            Spacer()
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 9)
+                .fill(Color.white.opacity(0.05))
+        )
+    }
+    
+    // MARK: - Category Filter Pills
+    
+    private var categoryFilterPills: some View {
+        HStack(spacing: 5) {
+            // All Pill
+            Button(action: {
+                state.selectedFilter = nil
+            }) {
+                Text("All (\(state.activeIssues.count))")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(state.selectedFilter == nil ? .white : .white.opacity(0.6))
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3.5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(state.selectedFilter == nil ? Color.blue.opacity(0.3) : Color.white.opacity(0.06))
+                    )
+            }
+            .buttonStyle(.plain)
+            
+            if state.correctnessCount > 0 {
+                Button(action: {
+                    state.selectedFilter = .correctness
+                }) {
+                    HStack(spacing: 3) {
+                        Circle()
+                            .fill(GrammarCategory.correctness.color)
+                            .frame(width: 6, height: 6)
+                        Text("\(state.correctnessCount)")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .foregroundColor(state.selectedFilter == .correctness ? .white : .white.opacity(0.7))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3.5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(state.selectedFilter == .correctness ? GrammarCategory.correctness.color.opacity(0.3) : Color.white.opacity(0.06))
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+            
+            if state.clarityCount > 0 {
+                Button(action: {
+                    state.selectedFilter = .clarity
+                }) {
+                    HStack(spacing: 3) {
+                        Circle()
+                            .fill(GrammarCategory.clarity.color)
+                            .frame(width: 6, height: 6)
+                        Text("\(state.clarityCount)")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .foregroundColor(state.selectedFilter == .clarity ? .white : .white.opacity(0.7))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3.5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(state.selectedFilter == .clarity ? GrammarCategory.clarity.color.opacity(0.3) : Color.white.opacity(0.06))
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+            
+            Spacer()
+        }
+    }
+    
+    // MARK: - Cards ScrollView
+    
+    private var cardsScrollView: some View {
+        ScrollView {
+            VStack(spacing: 10) {
+                if state.filteredIssues.isEmpty {
+                    VStack(spacing: 10) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 28))
+                            .foregroundColor(Color(red: 0.28, green: 0.76, blue: 0.52))
+                            .padding(.top, 40)
+                        
+                        Text(state.inputText.isEmpty ? "No text entered" : "All Clear!")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                        
+                        Text(state.inputText.isEmpty ? "Start typing to receive real-time grammar and clarity suggestions." : "Your writing is clear, polished, and error-free.")
+                            .font(.system(size: 11.5, weight: .regular))
+                            .foregroundColor(.white.opacity(0.6))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 16)
+                    }
+                    .frame(maxWidth: .infinity)
+                } else {
+                    ForEach(state.filteredIssues) { issue in
+                        issueCard(issue)
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+        }
+    }
+    
+    // MARK: - Single Issue Card
+    
+    private func issueCard(_ issue: GrammarIssue) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            // Header
+            HStack {
+                HStack(spacing: 4) {
+                    Image(systemName: issue.category.icon)
+                        .font(.system(size: 9.5))
+                        .foregroundColor(issue.category.color)
+                    Text(issue.category.rawValue)
+                        .font(.system(size: 10.5, weight: .bold))
+                        .foregroundColor(issue.category.color)
+                }
+                
+                Spacer()
+                
+                // Dismiss Button
+                Button(action: {
+                    state.dismissIssue(issue)
+                }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9.5, weight: .bold))
+                        .foregroundColor(.white.opacity(0.4))
+                }
+                .buttonStyle(.plain)
+                .help("Dismiss suggestion")
+            }
+            
+            // Correction Comparison
+            HStack(spacing: 6) {
+                Text(issue.original)
+                    .font(.system(size: 12.5, weight: .regular))
+                    .foregroundColor(Color.red.opacity(0.85))
+                    .strikethrough(true, color: Color.red.opacity(0.85))
+                
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 9.5))
+                    .foregroundColor(.white.opacity(0.4))
+                
+                Text(issue.replacement)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(Color(red: 0.28, green: 0.85, blue: 0.52))
+            }
+            
+            // Reason
+            Text(issue.reason)
+                .font(.system(size: 10.5, weight: .regular))
+                .foregroundColor(.white.opacity(0.6))
+                .lineLimit(2)
+            
+            // Accept Button
+            Button(action: {
+                state.acceptIssue(issue)
+            }) {
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 10, weight: .bold))
+                    Text("Accept: \"\(issue.replacement)\"")
+                        .font(.system(size: 11.5, weight: .semibold))
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(issue.category.color.opacity(0.35))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(issue.category.color.opacity(0.6), lineWidth: 0.8)
+                        )
+                )
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.white.opacity(0.06))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.white.opacity(0.10), lineWidth: 0.6)
+                )
+        )
     }
     
     // MARK: - AI Settings Sheet
@@ -679,7 +799,7 @@ public struct GrammarTypingBoxView: View {
             Divider().background(Color.white.opacity(0.15))
             
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 14) {
                     // Google Gemini
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
@@ -693,7 +813,7 @@ public struct GrammarTypingBoxView: View {
                             }
                             .font(.system(size: 11))
                         }
-                        Text("Google AI Studio offers 100% free API keys with fast response times and elite grammar reasoning.")
+                        Text("Free API keys from Google AI Studio. Excellent reasoning and natural tone rewriting.")
                             .font(.system(size: 11))
                             .foregroundColor(.secondary)
                         SecureField("AIzaSy...", text: $state.geminiKeyInput)
@@ -715,7 +835,7 @@ public struct GrammarTypingBoxView: View {
                             }
                             .font(.system(size: 11))
                         }
-                        Text("World's fastest inference engine. Free tier offers near-instant rewriting with open-source Llama 3.3.")
+                        Text("World's fastest inference platform with open-source Llama 3.3.")
                             .font(.system(size: 11))
                             .foregroundColor(.secondary)
                         SecureField("gsk_...", text: $state.groqKeyInput)
@@ -747,7 +867,7 @@ public struct GrammarTypingBoxView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("🦙 Ollama Local (100% Offline & Private)")
                             .font(.system(size: 13, weight: .semibold))
-                        Text("Run models directly on your Mac GPU with zero cloud requests.")
+                        Text("Runs on your Mac GPU with zero network requests.")
                             .font(.system(size: 11))
                             .foregroundColor(.secondary)
                         HStack(spacing: 8) {

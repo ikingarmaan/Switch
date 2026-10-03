@@ -89,9 +89,10 @@ public final class GrammarCoachService: ObservableObject, @unchecked Sendable {
         }
     }
     
-    // High-confidence typo lookup
-    private let commonTypos: [String: String] = [
+    // High-confidence verified typo lookup
+    public let commonTypos: [String: String] = [
         "grammer": "grammar",
+        "grammerly": "Grammarly",
         "writting": "writing",
         "coatch": "coach",
         "lpng": "long",
@@ -172,6 +173,7 @@ public final class GrammarCoachService: ObservableObject, @unchecked Sendable {
         "suprise": "surprise",
         "tendancy": "tendency",
         "tommorrow": "tomorrow",
+        "tomorow": "tomorrow",
         "tounge": "tongue",
         "unforseen": "unforeseen",
         "usefull": "useful",
@@ -181,7 +183,13 @@ public final class GrammarCoachService: ObservableObject, @unchecked Sendable {
         "wich": "which",
         "wether": "whether",
         "whould": "would",
-        "yesteday": "yesterday"
+        "yesteday": "yesterday",
+        "accomodate": "accommodate",
+        "computr": "computer",
+        "changs": "changes",
+        "restaraunt": "restaurant",
+        "unfortunatly": "unfortunately",
+        "developr": "developer"
     ]
     
     // Contractions mapping
@@ -312,12 +320,12 @@ public final class GrammarCoachService: ObservableObject, @unchecked Sendable {
         
         if typingBoxPanel == nil {
             let panel = KeyPanel(
-                contentRect: NSRect(x: 0, y: 0, width: 660, height: 530),
+                contentRect: NSRect(x: 0, y: 0, width: 840, height: 560),
                 styleMask: [.titled, .closable, .fullSizeContentView, .resizable],
                 backing: .buffered,
                 defer: false
             )
-            panel.minSize = NSSize(width: 580, height: 460)
+            panel.minSize = NSSize(width: 720, height: 500)
             panel.isFloatingPanel = true
             panel.level = .floating
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
@@ -584,7 +592,7 @@ public final class GrammarCoachService: ObservableObject, @unchecked Sendable {
         return nil
     }
     
-    private func preserveCase(original: String, replacement: String) -> String {
+    public func preserveCase(original: String, replacement: String) -> String {
         guard let firstOriginal = original.first, let firstRep = replacement.first else {
             return replacement
         }
@@ -643,7 +651,251 @@ public final class GrammarCoachService: ObservableObject, @unchecked Sendable {
         }
     }
     
-    // MARK: - Native Linguistic Grammar Engine
+    // MARK: - Grammarly-Grade Issue Scanner
+    
+    public func scanIssues(in text: String) -> [GrammarIssue] {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return [] }
+        var issues: [GrammarIssue] = []
+        let ns = text as NSString
+        let checker = NSSpellChecker.shared
+        
+        // 1. NSSpellChecker Non-Wrapping Full Scan
+        var offset = 0
+        var coveredRanges: [NSRange] = []
+        
+        while offset < ns.length {
+            var wordCount = 0
+            let range = checker.checkSpelling(
+                of: text,
+                startingAt: offset,
+                language: "en_US",
+                wrap: false,
+                inSpellDocumentWithTag: 0,
+                wordCount: &wordCount
+            )
+            
+            if range.location == NSNotFound || range.location < offset { break }
+            
+            let misspelled = ns.substring(with: range)
+            let lower = misspelled.lowercased()
+            
+            // Ignore single capital acronyms e.g. API, CPU, RAM, URL, GPU
+            if misspelled == misspelled.uppercased() && misspelled.count <= 5 {
+                offset = range.location + range.length
+                continue
+            }
+            
+            let replacement: String?
+            if let direct = commonTypos[lower] {
+                replacement = preserveCase(original: misspelled, replacement: direct)
+            } else {
+                let guesses = checker.guesses(
+                    forWordRange: range,
+                    in: text,
+                    language: "en_US",
+                    inSpellDocumentWithTag: 0
+                ) ?? []
+                replacement = guesses.first.map { preserveCase(original: misspelled, replacement: $0) }
+            }
+            
+            if let best = replacement, best != misspelled {
+                issues.append(
+                    GrammarIssue(
+                        category: .correctness,
+                        original: misspelled,
+                        replacement: best,
+                        reason: "Misspelled word: change to \"\(best)\"",
+                        range: range
+                    )
+                )
+                coveredRanges.append(range)
+            }
+            
+            offset = range.location + max(1, range.length)
+        }
+        
+        // 2. Grammar & Syntax Rules
+        let grammarRules: [(pattern: String, replacement: String, reason: String)] = [
+            // Modal verbs
+            ("\\b(could|should|would|might|must)\\s+of\\b", "$1 have", "Modal verb agreement: use \"have\" instead of \"of\""),
+            // Past participles
+            ("\\bsuppose\\s+to\\b", "supposed to", "Use past participle: \"supposed to\""),
+            ("\\buse\\s+to\\s+be\\b", "used to be", "Habitual expression: \"used to be\""),
+            // Homophones
+            ("\\btheir\\s+(is|are|was|were)\\b", "there $1", "Use \"there\" to indicate existence"),
+            ("\\byour\\s+(welcome|right|wrong|the best)\\b", "you're $1", "Contraction: use \"you're\" (you are)"),
+            ("\\bits\\s+(good|bad|fine|ok|okay|working|broken|great|nice|cool|important|ready|done|hard|easy|possible)\\b", "it's $1", "Contraction: use \"it's\" (it is)"),
+            ("\\b(better|worse|more|less|rather|easier|harder|bigger|smaller)\\s+then\\b", "$1 than", "Comparison: use \"than\" instead of \"then\""),
+            // Subject-Verb Agreement
+            ("\\bI\\s+(is|are)\\b", "I am", "Subject-verb agreement: use \"am\" with \"I\""),
+            ("\\b(he|she|it)\\s+dont\\b", "$1 doesn't", "Subject-verb agreement: use \"doesn't\" with singular third-person"),
+            ("\\b(he|she|it)\\s+do\\s+not\\b", "$1 does not", "Subject-verb agreement: use \"does not\""),
+            ("\\b(they|we|you)\\s+has\\b", "$1 have", "Subject-verb agreement: use \"have\" with plural subjects"),
+            // Articles
+            ("\\ba\\s+([aeiouAEIOU][a-zA-Z]+)\\b", "an $1", "Indefinite article: use \"an\" before vowel sounds"),
+            ("\\ban\\s+([bcdfghjklmnpqrstvwxyzBCDFGHJKLMNPQRSTVWXYZ][a-zA-Z]+)\\b", "a $1", "Indefinite article: use \"a\" before consonant sounds"),
+            // Pronoun Capitalization
+            ("\\bi\\b", "I", "Capitalization: capitalize the pronoun \"I\"")
+        ]
+        
+        for rule in grammarRules {
+            if let regex = try? NSRegularExpression(pattern: rule.pattern, options: .caseInsensitive) {
+                let matches = regex.matches(in: text, range: NSRange(location: 0, length: ns.length))
+                for m in matches {
+                    // Check overlap
+                    if coveredRanges.contains(where: { NSIntersectionRange($0, m.range).length > 0 }) {
+                        continue
+                    }
+                    let original = ns.substring(with: m.range)
+                    let rep = regex.stringByReplacingMatches(in: original, range: NSRange(location: 0, length: (original as NSString).length), withTemplate: rule.replacement)
+                    if rep != original {
+                        issues.append(
+                            GrammarIssue(
+                                category: .correctness,
+                                original: original,
+                                replacement: rep,
+                                reason: rule.reason,
+                                range: m.range
+                            )
+                        )
+                        coveredRanges.append(m.range)
+                    }
+                }
+            }
+        }
+        
+        // 3. Clarity & Conciseness Rules
+        let clarityRules: [(pattern: String, replacement: String, reason: String)] = [
+            ("\\bin order to\\b", "to", "Clarity: simplify wordy phrase to \"to\""),
+            ("\\bdue to the fact that\\b", "because", "Clarity: simplify wordy phrase to \"because\""),
+            ("\\bat this point in time\\b", "now", "Clarity: simplify wordy phrase to \"now\""),
+            ("\\bin the event that\\b", "if", "Clarity: simplify wordy phrase to \"if\""),
+            ("\\bfor the purpose of\\b", "for", "Clarity: simplify wordy phrase to \"for\""),
+            ("\\beach and every\\b", "every", "Clarity: eliminate redundant pairing (\"each and every\")"),
+            ("\\bfirst and foremost\\b", "first", "Clarity: eliminate redundant pairing (\"first and foremost\")"),
+            ("\\bas a matter of fact\\b", "actually", "Clarity: simplify filler to \"actually\"")
+        ]
+        
+        for rule in clarityRules {
+            if let regex = try? NSRegularExpression(pattern: rule.pattern, options: .caseInsensitive) {
+                let matches = regex.matches(in: text, range: NSRange(location: 0, length: ns.length))
+                for m in matches {
+                    if coveredRanges.contains(where: { NSIntersectionRange($0, m.range).length > 0 }) {
+                        continue
+                    }
+                    let original = ns.substring(with: m.range)
+                    issues.append(
+                        GrammarIssue(
+                            category: .clarity,
+                            original: original,
+                            replacement: rule.replacement,
+                            reason: rule.reason,
+                            range: m.range
+                        )
+                    )
+                    coveredRanges.append(m.range)
+                }
+            }
+        }
+        
+        // 4. Engagement & Vocabulary Rules
+        let engagementRules: [(pattern: String, replacement: String, reason: String)] = [
+            ("\\bvery good\\b", "excellent", "Engagement: strengthen weak intensifier with \"excellent\""),
+            ("\\bvery bad\\b", "substandard", "Engagement: strengthen weak intensifier with \"substandard\""),
+            ("\\bvery big\\b", "substantial", "Engagement: strengthen weak intensifier with \"substantial\""),
+            ("\\bvery important\\b", "critical", "Engagement: strengthen weak intensifier with \"critical\""),
+            ("\\bvery hard\\b", "challenging", "Engagement: strengthen weak intensifier with \"challenging\""),
+            ("\\bvery easy\\b", "effortless", "Engagement: strengthen weak intensifier with \"effortless\"")
+        ]
+        
+        for rule in engagementRules {
+            if let regex = try? NSRegularExpression(pattern: rule.pattern, options: .caseInsensitive) {
+                let matches = regex.matches(in: text, range: NSRange(location: 0, length: ns.length))
+                for m in matches {
+                    if coveredRanges.contains(where: { NSIntersectionRange($0, m.range).length > 0 }) {
+                        continue
+                    }
+                    let original = ns.substring(with: m.range)
+                    issues.append(
+                        GrammarIssue(
+                            category: .engagement,
+                            original: original,
+                            replacement: rule.replacement,
+                            reason: rule.reason,
+                            range: m.range
+                        )
+                    )
+                    coveredRanges.append(m.range)
+                }
+            }
+        }
+        
+        return issues.sorted { $0.range.location < $1.range.location }
+    }
+    
+    // MARK: - Issue Application
+    
+    public func applyIssue(_ issue: GrammarIssue, to text: String) -> String {
+        let ns = text as NSString
+        guard issue.range.location + issue.range.length <= ns.length else {
+            return text.replacingOccurrences(of: issue.original, with: issue.replacement)
+        }
+        let currentSub = ns.substring(with: issue.range)
+        if currentSub.caseInsensitiveCompare(issue.original) == .orderedSame {
+            return ns.replacingCharacters(in: issue.range, with: issue.replacement)
+        } else {
+            return text.replacingOccurrences(of: issue.original, with: issue.replacement)
+        }
+    }
+    
+    public func applyAllIssues(_ issues: [GrammarIssue], to text: String) -> String {
+        var working = text
+        let sorted = issues.filter { !$0.isDismissed }.sorted { $0.range.location > $1.range.location }
+        
+        for issue in sorted {
+            let ns = working as NSString
+            if issue.range.location + issue.range.length <= ns.length {
+                let sub = ns.substring(with: issue.range)
+                if sub.caseInsensitiveCompare(issue.original) == .orderedSame {
+                    working = ns.replacingCharacters(in: issue.range, with: issue.replacement)
+                    continue
+                }
+            }
+            working = working.replacingOccurrences(of: issue.original, with: issue.replacement)
+        }
+        
+        // Punctuation clean-up
+        if let spaceBeforePunct = try? NSRegularExpression(pattern: "\\s+([,.:;?!])", options: []) {
+            working = spaceBeforePunct.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: (working as NSString).length), withTemplate: "$1")
+        }
+        if let doublePunct = try? NSRegularExpression(pattern: "([,.:;?!])\\1+", options: []) {
+            working = doublePunct.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: (working as NSString).length), withTemplate: "$1")
+        }
+        
+        return working.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    
+    public func calculateScore(text: String, issues: [GrammarIssue]) -> Int {
+        let activeIssues = issues.filter { !$0.isDismissed && !$0.isApplied }
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return 100 }
+        if activeIssues.isEmpty { return 100 }
+        
+        let words = text.split { $0.isWhitespace || $0.isNewline }.count
+        var penalty = 0
+        for issue in activeIssues {
+            switch issue.category {
+            case .correctness: penalty += 12
+            case .clarity: penalty += 6
+            case .engagement: penalty += 4
+            case .delivery: penalty += 4
+            }
+        }
+        
+        let base = max(20, 100 - Int(Double(penalty) / max(1.0, Double(words) / 15.0)))
+        return min(100, max(15, base))
+    }
+    
+    // MARK: - Native Linguistic Polish Engine
     
     public func polishTextWithAI(_ text: String, style: WritingStyle, completion: @escaping (String, Int, [String]) -> Void) {
         GrammarAIService.shared.polishWithAI(text: text, style: style) { polished, changes in
@@ -660,123 +912,46 @@ public final class GrammarCoachService: ObservableObject, @unchecked Sendable {
             return (text, 0, [])
         }
         
-        var working = text
-        var changes: [String] = []
-        var count = 0
-        
-        // 1. Standalone 'i' -> 'I'
-        if let regexI = try? NSRegularExpression(pattern: "\\bi\\b", options: []) {
-            let matches = regexI.matches(in: working, range: NSRange(location: 0, length: (working as NSString).length))
-            if !matches.isEmpty {
-                working = regexI.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: (working as NSString).length), withTemplate: "I")
-                changes.append("Capitalized 'i' → 'I'")
-                count += matches.count
-            }
+        let issues = scanIssues(in: text)
+        let relevantIssues: [GrammarIssue]
+        switch style {
+        case .fixOnly:
+            relevantIssues = issues.filter { $0.category == .correctness }
+        case .formal, .casual, .elevate:
+            relevantIssues = issues
+        case .concise:
+            relevantIssues = issues.filter { $0.category == .correctness || $0.category == .clarity }
         }
         
-        // 2. High-Frequency Grammar Fixes
-        let grammarRules: [(pattern: String, replacement: String, name: String)] = [
-            // could of -> could have
-            ("\\b(could|should|would|might|must)\\s+of\\b", "$1 have", "Modal verb agreement (could of → could have)"),
-            // suppose to -> supposed to
-            ("\\bsuppose\\s+to\\b", "supposed to", "Past participle (suppose to → supposed to)"),
-            ("\\buse\\s+to\\s+be\\b", "used to be", "Habitual expression (use to be → used to be)"),
-            // better then -> better than
-            ("\\b(better|worse|more|less|rather|easier|harder|bigger|smaller)\\s+then\\b", "$1 than", "Comparison (then → than)"),
-            // their is -> there is
-            ("\\btheir\\s+(is|are|was|were)\\b", "there $1", "Existential phrase (their → there)"),
-            // subject-verb fixes
-            ("\\bI\\s+(is|are)\\b", "I am", "Subject-verb agreement (I am)"),
-            ("\\b(he|she|it)\\s+dont\\b", "$1 doesn't", "Subject-verb contraction (doesn't)"),
-            ("\\b(he|she|it)\\s+do\\s+not\\b", "$1 does not", "Subject-verb agreement (does not)"),
-            ("\\b(they|we|you)\\s+has\\b", "$1 have", "Subject-verb agreement (have)"),
-            // articles
-            ("\\ba\\s+([aeiouAEIOU][a-zA-Z]+)\\b", "an $1", "Indefinite article (a → an)"),
-            ("\\ban\\s+([bcdfghjklmnpqrstvwxyzBCDFGHJKLMNPQRSTVWXYZ][a-zA-Z]+)\\b", "a $1", "Indefinite article (an → a)")
-        ]
+        var working = applyAllIssues(relevantIssues, to: text)
+        var changes = relevantIssues.map { "\($0.original) → \($0.replacement) (\($0.reason))" }
         
-        for rule in grammarRules {
-            if let regex = try? NSRegularExpression(pattern: rule.pattern, options: .caseInsensitive) {
-                let matches = regex.matches(in: working, range: NSRange(location: 0, length: (working as NSString).length))
-                if !matches.isEmpty {
-                    working = regex.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: (working as NSString).length), withTemplate: rule.replacement)
-                    changes.append(rule.name)
-                    count += matches.count
-                }
-            }
-        }
-        
-        // 3. Known typos replacement
-        for (typo, correction) in commonTypos {
-            let pat = "\\b" + NSRegularExpression.escapedPattern(for: typo) + "\\b"
-            if let regex = try? NSRegularExpression(pattern: pat, options: .caseInsensitive) {
-                let matches = regex.matches(in: working, range: NSRange(location: 0, length: (working as NSString).length))
-                if !matches.isEmpty {
-                    working = regex.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: (working as NSString).length), withTemplate: correction)
-                    changes.append("Spelling: \(typo) → \(correction)")
-                    count += matches.count
-                }
-            }
-        }
-        
-        // 4. Style-Specific Adjustments
+        // Style-specific adjustments
         if style == .formal {
-            // Expand contractions
             for (contraction, expansion) in formalExpansions {
                 let pat = "\\b" + NSRegularExpression.escapedPattern(for: contraction) + "\\b"
                 if let regex = try? NSRegularExpression(pattern: pat, options: .caseInsensitive) {
                     let matches = regex.matches(in: working, range: NSRange(location: 0, length: (working as NSString).length))
                     if !matches.isEmpty {
                         working = regex.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: (working as NSString).length), withTemplate: expansion)
-                        changes.append("Formal expansion: \(contraction) → \(expansion)")
-                        count += matches.count
+                        changes.append("Formal: \(contraction) → \(expansion)")
                     }
                 }
             }
         } else if style == .casual {
-            // Natural contractions
             for (expansion, contraction) in casualContractions {
                 let pat = "\\b" + NSRegularExpression.escapedPattern(for: expansion) + "\\b"
                 if let regex = try? NSRegularExpression(pattern: pat, options: .caseInsensitive) {
                     let matches = regex.matches(in: working, range: NSRange(location: 0, length: (working as NSString).length))
                     if !matches.isEmpty {
                         working = regex.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: (working as NSString).length), withTemplate: contraction)
-                        changes.append("Conversational: \(expansion) → \(contraction)")
-                        count += matches.count
-                    }
-                }
-            }
-        } else if style == .concise {
-            // Trim conversational wordiness
-            let wordyPairs = [
-                ("in order to", "to"),
-                ("at this point in time", "now"),
-                ("due to the fact that", "because"),
-                ("for the purpose of", "for"),
-                ("in the event that", "if")
-            ]
-            for (wordy, concise) in wordyPairs {
-                let pat = "\\b" + NSRegularExpression.escapedPattern(for: wordy) + "\\b"
-                if let regex = try? NSRegularExpression(pattern: pat, options: .caseInsensitive) {
-                    let matches = regex.matches(in: working, range: NSRange(location: 0, length: (working as NSString).length))
-                    if !matches.isEmpty {
-                        working = regex.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: (working as NSString).length), withTemplate: concise)
-                        changes.append("Conciseness: \"\(wordy)\" → \"\(concise)\"")
-                        count += matches.count
+                        changes.append("Casual: \(expansion) → \(contraction)")
                     }
                 }
             }
         }
         
-        // 5. Clean punctuation spacing
-        if let spaceBeforePunct = try? NSRegularExpression(pattern: "\\s+([,.:;?!])", options: []) {
-            working = spaceBeforePunct.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: (working as NSString).length), withTemplate: "$1")
-        }
-        if let doublePunct = try? NSRegularExpression(pattern: "([,.:;?!])\\1+", options: []) {
-            working = doublePunct.stringByReplacingMatches(in: working, range: NSRange(location: 0, length: (working as NSString).length), withTemplate: "$1")
-        }
-        
-        // 6. Sentence capitalization
+        // Sentence capitalization
         var capitalizedResult = ""
         var capitalizeNext = true
         for char in working {
@@ -792,7 +967,7 @@ public final class GrammarCoachService: ObservableObject, @unchecked Sendable {
         }
         
         let trimmed = capitalizedResult.trimmingCharacters(in: .whitespacesAndNewlines)
-        return (trimmed, count, changes)
+        return (trimmed, changes.count, changes)
     }
     
     // MARK: - Mini Floating Toast
