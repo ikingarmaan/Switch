@@ -469,6 +469,20 @@ public final class SwitchListViewModel: ObservableObject {
             }
             .store(in: &cancellables)
             
+        NotificationCenter.default.publisher(for: .locationServicesStateDidChange)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] notif in
+                guard let self = self,
+                      let index = self.switches.firstIndex(where: { $0.type == .locationServices })
+                else { return }
+                let loc = LocationService.shared
+                let isEnabled = notif.object as? Bool ?? loc.isEnabled
+                self.switches[index].isOn = isEnabled
+                self.switches[index].isLoading = false
+                self.switches[index].subtitle = loc.statusSubtitle
+            }
+            .store(in: &cancellables)
+            
         NotificationCenter.default.publisher(for: .nightShiftDidChange)
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
@@ -526,7 +540,8 @@ public final class SwitchListViewModel: ObservableObject {
             .knockScreenshot,
             .clipboardManager,
             .stickyNotes,
-            .selfControl
+            .selfControl,
+            .locationServices
         ]
         
         self.switches = initialTypes.map { type in

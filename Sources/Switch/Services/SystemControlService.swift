@@ -33,6 +33,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
     case autoTabSwitch = "autoTabSwitch"
     case stickyNotes = "stickyNotes"
     case selfControl = "selfControl"
+    case locationServices = "locationServices"
     
     public var id: String { rawValue }
     
@@ -67,6 +68,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .autoTabSwitch: return "Auto Tab Switcher"
         case .stickyNotes: return "Sticky Notes"
         case .selfControl: return "Self Control & Recovery"
+        case .locationServices: return "Location Services"
         }
     }
     
@@ -101,6 +103,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .autoTabSwitch: return "arrow.triangle.2.circlepath"
         case .stickyNotes: return "note.text"
         case .selfControl: return "shield.checkered"
+        case .locationServices: return "location.fill"
         }
     }
     
@@ -303,6 +306,11 @@ public final class SystemControlService: @unchecked Sendable {
         case .selfControl:
             let sc = SelfControlService.shared
             return (sc.isShieldActive, sc.statusSubtitle)
+            
+        case .locationServices:
+            let loc = LocationService.shared
+            _ = loc.checkStatus()
+            return (loc.isEnabled, loc.statusSubtitle)
         }
     }
     
@@ -460,6 +468,9 @@ public final class SystemControlService: @unchecked Sendable {
             DispatchQueue.main.async {
                 SelfControlService.shared.setShield(isOn)
             }
+            
+        case .locationServices:
+            LocationService.shared.toggle(targetState: isOn)
         }
     }
     

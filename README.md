@@ -65,12 +65,13 @@ Download the pre-compiled, codesigned app bundle directly from GitHub Releases:
 | 🔄 **Auto Tab Switcher** | Automatically rotates browser and app tabs at **customizable intervals (default: every 1 minute)**. Perfect for monitoring dashboards, kiosks, status displays, presentations, or hands-free browsing across Chrome, Safari, Arc, Firefox, and macOS apps with forward/reverse direction and display awake retention. |
 | 📝 **Colorful Sticky Notes** | Beautiful, vibrantly styled desktop stickies with 7 color themes, **interactive checkboxes (To-Do Checklist mode)** with strikethrough & progress, **text alignment (Left, Center, Right)**, font sizes (S/M/L), bullet lists, instant auto-save, collapsible cards, bottom-right resize grip, and a **Pin to Desktop (Home Page)** vs **Float on Top** mode! |
 | 🛡️ **Self Control & Recovery** | Comprehensive self-mastery companion: **Live precision streak counter** (days, hours, mins, secs), **90-Day Neuroplasticity Reboot Roadmap**, **Urge SOS Center** with guided Box Breathing pacer & sensory grounding, **1-click Mac-wide Adult Content Blocker**, daily HALT trigger journal, and unshakeable personal motivation anchors. |
+| 📍 **Location Services Toggle** | 1-click **ON / OFF switch for macOS Location Services** with real-time CoreLocation status monitoring (`location.fill` / `location.slash.fill`), instant jump to Privacy & Security settings, and automated master toggle integration. Turning off Location Services blocks all apps, browsers, and background trackers from accessing your physical GPS coordinates. |
 
 ---
 
 ## 📋 Complete Switches Catalog
 
-Switch packs over **27 native macOS switches** into an ultra-responsive, beautiful interface:
+Switch packs over **28 native macOS switches** into an ultra-responsive, beautiful interface:
 
 ### 🚀 Productivity & Workflow
 - **Auto Tab Switcher**: Hands-free tab carousel that auto-switches browser and app tabs every minute (or 10s, 30s, 1m, 2m, 5m, 10m). Supports forward/reverse direction, customizable shortcut styles (Control+Tab, ⌘⌥→, ⌘⇧]), screen-awake retention, live countdown ticker, and audio feedback.
@@ -89,6 +90,7 @@ Switch packs over **27 native macOS switches** into an ultra-responsive, beautif
 - **Family Protection DNS**: Filters adult content, malware, and phishing domains.
 - **High-Speed DNS (1.1.1.1)**: Cloudflare DNS for lowest gaming and browsing ping.
 - **1-Click Auto VPN**: Connects to configured ProtonVPN or system VPN tunnel.
+- **Location Services Toggle**: 1-click master switch to toggle macOS Location Services ON or OFF with live CoreLocation tracking. Turning it off immediately stops all applications, browsers, websites, and background system services from detecting or tracking your Mac's physical coordinates. Includes quick-jump to Location Privacy Settings and real-time status pill (`Enabled` vs `Off · Privacy Protected`).
 
 ### 💻 System Controls
 - **Hide Desktop Icons**: Instantly clear messy desktops for presentations or screen sharing.

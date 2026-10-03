@@ -19,9 +19,9 @@ public struct SwitchRowView: View {
     public var body: some View {
         HStack(spacing: 14) {
             // Icon
-            Image(systemName: item.iconName)
+            Image(systemName: item.type == .locationServices ? (item.isOn ? "location.fill" : "location.slash.fill") : item.iconName)
                 .font(.system(size: 16, weight: .regular))
-                .foregroundColor(.white)
+                .foregroundColor(item.type == .locationServices && !item.isOn ? Color.white.opacity(0.4) : .white)
                 .frame(width: 24, height: 24, alignment: .center)
             
             // Title & Subtitle
@@ -1899,6 +1899,71 @@ public struct SwitchRowView: View {
                             HStack {
                                 Text("Log Resisted Urge (+1 Victory)")
                                 Image(systemName: "checkmark.seal.fill")
+                            }
+                        }
+                    }
+                } else if item.type == .locationServices {
+                    HStack(spacing: 6) {
+                        Menu {
+                            Button(action: {
+                                LocationService.shared.toggle()
+                            }) {
+                                HStack {
+                                    Text(item.isOn ? "Turn Off Location Services..." : "Turn On Location Services...")
+                                    Image(systemName: item.isOn ? "location.slash" : "location")
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            Button(action: {
+                                LocationService.shared.openLocationSettings()
+                            }) {
+                                HStack {
+                                    Text("Open Location Privacy Settings...")
+                                    Image(systemName: "gearshape")
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            Section("Privacy Protection") {
+                                Button(action: {}) {
+                                    Text(item.isOn ? "● Location is accessible by permitted apps" : "🛡️ Protected: All apps blocked from location")
+                                }
+                                .disabled(true)
+                            }
+                        } label: {
+                            HStack(spacing: 3) {
+                                Text(item.subtitle ?? (item.isOn ? "Enabled" : "Off · Private"))
+                                    .font(.system(size: 12, weight: item.isOn ? .bold : .medium, design: .rounded))
+                                    .foregroundColor(item.isOn ? Color(red: 0.28, green: 0.75, blue: 0.98) : Color.gray.opacity(0.85))
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 8))
+                                    .foregroundColor(Color.gray.opacity(0.6))
+                            }
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                    }
+                    .contextMenu {
+                        Button(action: {
+                            LocationService.shared.toggle()
+                        }) {
+                            HStack {
+                                Text(item.isOn ? "Turn Off Location Services..." : "Turn On Location Services...")
+                                Image(systemName: item.isOn ? "location.slash" : "location")
+                            }
+                        }
+                        
+                        Divider()
+                        
+                        Button(action: {
+                            LocationService.shared.openLocationSettings()
+                        }) {
+                            HStack {
+                                Text("Open Location Privacy Settings...")
+                                Image(systemName: "gearshape")
                             }
                         }
                     }
