@@ -30,7 +30,6 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
     case knockScreenshot = "knockScreenshot"
     case clipboardManager = "clipboardManager"
     case autoScroll = "autoScroll"
-    case autoTabSwitch = "autoTabSwitch"
     case stickyNotes = "stickyNotes"
     case selfControl = "selfControl"
     case locationServices = "locationServices"
@@ -65,7 +64,6 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .knockScreenshot: return "Knock Screenshot"
         case .clipboardManager: return "Clipboard History"
         case .autoScroll: return "Auto Scroll"
-        case .autoTabSwitch: return "Auto Tab Switcher"
         case .stickyNotes: return "Sticky Notes"
         case .selfControl: return "Self Control & Recovery"
         case .locationServices: return "Location Services"
@@ -100,7 +98,6 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .knockScreenshot: return "hand.tap.fill"
         case .clipboardManager: return "doc.on.clipboard.fill"
         case .autoScroll: return "arrow.up.and.down.circle.fill"
-        case .autoTabSwitch: return "arrow.triangle.2.circlepath"
         case .stickyNotes: return "note.text"
         case .selfControl: return "shield.checkered"
         case .locationServices: return "location.fill"
@@ -295,10 +292,6 @@ public final class SystemControlService: @unchecked Sendable {
             let scroll = AutoScrollService.shared
             return (scroll.isActive, scroll.statusSubtitle)
             
-        case .autoTabSwitch:
-            let s = AutoTabSwitchService.shared
-            return (s.isActive, s.statusSubtitle)
-            
         case .stickyNotes:
             let notes = StickyNotesService.shared
             return (notes.isVisible, notes.statusSubtitle)
@@ -452,11 +445,6 @@ public final class SystemControlService: @unchecked Sendable {
         case .autoScroll:
             DispatchQueue.main.async {
                 AutoScrollService.shared.setEnabled(isOn)
-            }
-            
-        case .autoTabSwitch:
-            DispatchQueue.main.async {
-                AutoTabSwitchService.shared.setEnabled(isOn)
             }
             
         case .stickyNotes:
