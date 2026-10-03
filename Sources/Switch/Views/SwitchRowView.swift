@@ -1847,6 +1847,184 @@ public struct SwitchRowView: View {
                             }
                         }
                     }
+                } else if item.type == .ramGpuReset {
+                    let ramService = RAMGPUResetService.shared
+                    let diag = ramService.currentDiagnostics
+                    
+                    HStack(spacing: 5) {
+                        Button(action: {
+                            ramService.triggerInstantReset()
+                        }) {
+                            Image(systemName: "bolt.fill")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(
+                                    ramService.isResetting
+                                        ? Color(red: 1.0, green: 0.85, blue: 0.20)
+                                        : (item.isOn ? Color(red: 0.38, green: 0.75, blue: 0.98) : Color.white.opacity(0.45))
+                                )
+                                .rotationEffect(.degrees(ramService.isResetting ? 360 : 0))
+                                .animation(
+                                    ramService.isResetting
+                                        ? Animation.linear(duration: 0.8).repeatForever(autoreverses: false)
+                                        : .default,
+                                    value: ramService.isResetting
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .help("Trigger Instant RAM & GPU Reset")
+                        .disabled(ramService.isResetting)
+                        
+                        Menu {
+                            Button(action: {
+                                ramService.triggerInstantReset()
+                            }) {
+                                HStack {
+                                    Text("Reset RAM & GPU Now ⚡️")
+                                    Image(systemName: "bolt.fill")
+                                }
+                            }
+                            .disabled(ramService.isResetting)
+                            
+                            Divider()
+                            
+                            Section("Anti-Lag Protection") {
+                                Button(action: {
+                                    ramService.setAutoGuardEnabled(!ramService.isAutoGuardEnabled)
+                                }) {
+                                    HStack {
+                                        Text("Auto-Guard (Trigger when RAM > 85%)")
+                                        if ramService.isAutoGuardEnabled {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                                
+                                Button(action: {
+                                    ramService.setRefreshDockOnReset(!ramService.refreshDockOnReset)
+                                }) {
+                                    HStack {
+                                        Text("Refresh Dock & Compositor Layers")
+                                        if ramService.refreshDockOnReset {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                                
+                                Button(action: {
+                                    ramService.setSoundFeedback(!ramService.soundFeedback)
+                                }) {
+                                    HStack {
+                                        Text("Play Chime on Reset")
+                                        if ramService.soundFeedback {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            Section("Live System Memory (\(diag.usedPercentage)% Used)") {
+                                Button(action: {}) {
+                                    Text("Total Physical RAM: \(diag.formattedTotal)")
+                                }
+                                .disabled(true)
+                                
+                                Button(action: {}) {
+                                    Text("Used: \(diag.formattedUsed) · Free: \(String(format: "%.1f GB", Double(diag.freeMB) / 1024.0))")
+                                }
+                                .disabled(true)
+                                
+                                Button(action: {}) {
+                                    Text("Inactive / Purgeable: \(diag.formattedInactive)")
+                                }
+                                .disabled(true)
+                                
+                                Button(action: {}) {
+                                    Text("Wired System Memory: \(diag.formattedWired)")
+                                }
+                                .disabled(true)
+                                
+                                Button(action: {}) {
+                                    Text("Graphics: \(diag.gpuName)")
+                                }
+                                .disabled(true)
+                            }
+                            
+                            Divider()
+                            
+                            Button(action: {
+                                NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Activity Monitor.app"))
+                            }) {
+                                HStack {
+                                    Text("Open Activity Monitor...")
+                                    Image(systemName: "chart.bar.xaxis")
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 3) {
+                                Text(item.subtitle ?? ramService.statusSubtitle)
+                                    .font(.system(size: 12, weight: item.isOn ? .bold : .medium, design: .rounded))
+                                    .foregroundColor(
+                                        ramService.flashMessage != nil
+                                            ? Color(red: 0.25, green: 0.85, blue: 0.50)
+                                            : (ramService.isResetting
+                                                ? Color(red: 1.0, green: 0.85, blue: 0.20)
+                                                : (item.isOn ? Color(red: 0.38, green: 0.75, blue: 0.98) : Color.gray.opacity(0.85)))
+                                    )
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 8))
+                                    .foregroundColor(Color.gray.opacity(0.6))
+                            }
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                    }
+                    .contextMenu {
+                        Button(action: {
+                            ramService.triggerInstantReset()
+                        }) {
+                            HStack {
+                                Text("Reset RAM & GPU Now ⚡️")
+                                Image(systemName: "bolt.fill")
+                            }
+                        }
+                        
+                        Divider()
+                        
+                        Button(action: {
+                            ramService.setAutoGuardEnabled(!ramService.isAutoGuardEnabled)
+                        }) {
+                            HStack {
+                                Text("Auto-Guard Anti-Lag")
+                                if ramService.isAutoGuardEnabled {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                        
+                        Button(action: {
+                            ramService.setRefreshDockOnReset(!ramService.refreshDockOnReset)
+                        }) {
+                            HStack {
+                                Text("Refresh Dock Compositor")
+                                if ramService.refreshDockOnReset {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                        
+                        Divider()
+                        
+                        Button(action: {
+                            NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Activity Monitor.app"))
+                        }) {
+                            HStack {
+                                Text("Open Activity Monitor...")
+                                Image(systemName: "chart.bar.xaxis")
+                            }
+                        }
+                    }
                 } else if let subtitle = item.subtitle, !subtitle.isEmpty {
                     Text(subtitle)
                         .font(.system(size: 12, weight: .regular))

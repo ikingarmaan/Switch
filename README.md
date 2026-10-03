@@ -65,6 +65,7 @@ Download the pre-compiled, codesigned app bundle directly from GitHub Releases:
 | 📝 **Colorful Sticky Notes** | Beautiful, vibrantly styled desktop stickies with 7 color themes, **interactive checkboxes (To-Do Checklist mode)** with strikethrough & progress, **text alignment (Left, Center, Right)**, font sizes (S/M/L), bullet lists, instant auto-save, collapsible cards, bottom-right resize grip, and a **Pin to Desktop (Home Page)** vs **Float on Top** mode! |
 | 🛡️ **Self Control & Recovery** | Comprehensive self-mastery companion: **Live precision streak counter** (days, hours, mins, secs), **90-Day Neuroplasticity Reboot Roadmap**, **Urge SOS Center** with guided Box Breathing pacer & sensory grounding, **1-click Mac-wide Adult Content Blocker**, daily HALT trigger journal, and unshakeable personal motivation anchors. |
 | 📍 **Location Services Toggle** | 1-click **ON / OFF switch for macOS Location Services** with real-time CoreLocation status monitoring (`location.fill` / `location.slash.fill`), instant jump to Privacy & Security settings, and automated master toggle integration. Turning off Location Services blocks all apps, browsers, and background trackers from accessing your physical GPS coordinates. |
+| ⚡️ **Instant RAM & GPU Reset** | Intelligent anti-lag engine that flushes clogged inactive system memory, restores hardware color lookup tables, clears zombie Metal compiler JIT heaps, terminates leaky WebKit GPU processes, flushes QuickLook caches, and features an **Auto-Guard Mode** that automatically clears memory bottlenecks when RAM usage crosses 85%. |
 
 ---
 
@@ -106,6 +107,7 @@ Switch packs over **27 native macOS switches** into an ultra-responsive, beautif
 - **Lock Screen**: Instant screen lock button.
 - **Empty Trash**: 1-click trash purge.
 - **Force Quit Apps**: Closes all foreground user apps in one click.
+- **Instant RAM & GPU Reset**: Anti-lag maintenance engine that purges inactive Mach VM memory, flushes WebKit GPU processes, terminates stale Metal compiler JIT heaps, restores display color lookup tables, and flushes QuickLook caches. Features **Auto-Guard Mode** (>85% RAM threshold), live memory diagnostics popover, instant reset button (`bolt.fill`), and audio feedback chime.
 
 ---
 

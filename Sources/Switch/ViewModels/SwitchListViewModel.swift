@@ -481,10 +481,34 @@ public final class SwitchListViewModel: ObservableObject {
                 }
             }
             .store(in: &cancellables)
+            
+        NotificationCenter.default.publisher(for: .ramGpuResetStateDidChange)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self = self,
+                      let index = self.switches.firstIndex(where: { $0.type == .ramGpuReset })
+                else { return }
+                let ram = RAMGPUResetService.shared
+                self.switches[index].isOn = ram.isAutoGuardEnabled
+                self.switches[index].isLoading = false
+                self.switches[index].subtitle = ram.statusSubtitle
+            }
+            .store(in: &cancellables)
+            
+        NotificationCenter.default.publisher(for: .ramGpuResetDidComplete)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self = self,
+                      let index = self.switches.firstIndex(where: { $0.type == .ramGpuReset })
+                else { return }
+                let ram = RAMGPUResetService.shared
+                self.switches[index].subtitle = ram.statusSubtitle
+            }
+            .store(in: &cancellables)
     }
     
     private func setupSwitches() {
-        // Ordered as shown in user's image + lockKeyboard + cameraPreview + timer + amphetamine + mouseJiggler + autoScroll + googlyEyes + volumeBoost + grammarCoach + systemMonitor + loomRecorder + forceQuitApps + autoVPN + tidyFolders + adblockDNS + knockScreenshot + clipboardManager + stickyNotes + selfControl
+        // Ordered as shown in user's image + lockKeyboard + cameraPreview + timer + amphetamine + mouseJiggler + autoScroll + googlyEyes + volumeBoost + grammarCoach + systemMonitor + loomRecorder + forceQuitApps + autoVPN + tidyFolders + adblockDNS + knockScreenshot + clipboardManager + stickyNotes + selfControl + locationServices + ramGpuReset
         let initialTypes: [SwitchType] = [
             .hideDesktop,
             .keepAwake,
@@ -512,7 +536,8 @@ public final class SwitchListViewModel: ObservableObject {
             .clipboardManager,
             .stickyNotes,
             .selfControl,
-            .locationServices
+            .locationServices,
+            .ramGpuReset
         ]
         
         self.switches = initialTypes.map { type in

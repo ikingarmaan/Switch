@@ -33,6 +33,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
     case stickyNotes = "stickyNotes"
     case selfControl = "selfControl"
     case locationServices = "locationServices"
+    case ramGpuReset = "ramGpuReset"
     
     public var id: String { rawValue }
     
@@ -67,6 +68,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .stickyNotes: return "Sticky Notes"
         case .selfControl: return "Self Control & Recovery"
         case .locationServices: return "Location Services"
+        case .ramGpuReset: return "RAM & GPU Reset"
         }
     }
     
@@ -101,6 +103,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .stickyNotes: return "note.text"
         case .selfControl: return "shield.checkered"
         case .locationServices: return "location.fill"
+        case .ramGpuReset: return "bolt.shield.fill"
         }
     }
     
@@ -304,6 +307,10 @@ public final class SystemControlService: @unchecked Sendable {
             let loc = LocationService.shared
             _ = loc.checkStatus()
             return (loc.isEnabled, loc.statusSubtitle)
+            
+        case .ramGpuReset:
+            let ram = RAMGPUResetService.shared
+            return (ram.isAutoGuardEnabled, ram.statusSubtitle)
         }
     }
     
@@ -459,6 +466,14 @@ public final class SystemControlService: @unchecked Sendable {
             
         case .locationServices:
             LocationService.shared.toggle(targetState: isOn)
+            
+        case .ramGpuReset:
+            DispatchQueue.main.async {
+                RAMGPUResetService.shared.setAutoGuardEnabled(isOn)
+                if isOn {
+                    RAMGPUResetService.shared.triggerInstantReset()
+                }
+            }
         }
     }
     
@@ -647,6 +662,10 @@ public final class SystemControlService: @unchecked Sendable {
         case .selfControl:
             DispatchQueue.main.async {
                 SelfControlWindowManager.shared.showWindow()
+            }
+        case .ramGpuReset:
+            DispatchQueue.main.async {
+                RAMGPUResetService.shared.triggerInstantReset()
             }
         default:
             break
