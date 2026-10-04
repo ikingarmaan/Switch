@@ -36,6 +36,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
     case ramGpuReset = "ramGpuReset"
     case cleanMacCache = "cleanMacCache"
     case wisprFlow = "wisprFlow"
+    case dockDoor = "dockDoor"
     
     public var id: String { rawValue }
     
@@ -73,6 +74,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .ramGpuReset: return "RAM & GPU Reset"
         case .cleanMacCache: return "Mac Cleaner"
         case .wisprFlow: return "Wispr Flow (Voice to Text)"
+        case .dockDoor: return "DockDoor (Window Previews)"
         }
     }
     
@@ -110,6 +112,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .ramGpuReset: return "bolt.fill"
         case .cleanMacCache: return "trash.circle.fill"
         case .wisprFlow: return "waveform.and.mic"
+        case .dockDoor: return "macwindow.on.rectangle"
         }
     }
     
@@ -325,6 +328,10 @@ public final class SystemControlService: @unchecked Sendable {
         case .wisprFlow:
             let wf = WisprFlowService.shared
             return (wf.isEnabled, wf.statusSubtitle)
+            
+        case .dockDoor:
+            let dd = DockDoorService.shared
+            return (dd.isEnabled, dd.statusSubtitle)
         }
     }
     
@@ -500,6 +507,11 @@ public final class SystemControlService: @unchecked Sendable {
         case .wisprFlow:
             DispatchQueue.main.async {
                 WisprFlowService.shared.setEnabled(isOn)
+            }
+            
+        case .dockDoor:
+            DispatchQueue.main.async {
+                DockDoorService.shared.setEnabled(isOn)
             }
         }
     }

@@ -32,8 +32,52 @@ public struct SwitchRowView: View {
                     .lineLimit(1)
                     .layoutPriority(1)
                 
-                if item.type == .timer {
-                    Menu {
+                rowDetailContent
+            }
+            
+            Spacer()
+            
+            // Right Control: Toggle or Action Button
+            if item.isActionOnly {
+                Button(action: {
+                    onAction?()
+                }) {
+                    Image(systemName: "arrow.forward.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundColor(.gray)
+                }
+                .buttonStyle(.plain)
+            } else {
+                Toggle("", isOn: Binding(
+                    get: { item.isOn },
+                    set: { newValue in
+                        onToggle(newValue)
+                    }
+                ))
+                .toggleStyle(SwitchToggleStyle(tint: .accentColor))
+                .labelsHidden()
+                .disabled(item.isLoading)
+                .opacity(item.isLoading ? 0.6 : 1.0)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 3.8)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(item.isHovered ? Color(red: 0.16, green: 0.22, blue: 0.32).opacity(0.7) : Color.clear)
+        )
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.15)) {
+                item.isHovered = hovering
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var rowDetailContent: some View {
+        if item.type == .timer {
+            Menu {
                         ForEach(CountdownTimerService.shared.presets, id: \.seconds) { preset in
                             Button(action: {
                                 CountdownTimerService.shared.setDuration(preset.seconds)
@@ -534,7 +578,7 @@ public struct SwitchRowView: View {
                         
                         Menu {
                             Section("Change Interval") {
-                                ForEach(WallpaperInterval.allCases) { inv in
+                                ForEach(WallpaperInterval.allCases, id: \.self) { inv in
                                     Button(action: {
                                         WallpaperChangerService.shared.setInterval(inv)
                                     }) {
@@ -549,7 +593,7 @@ public struct SwitchRowView: View {
                             }
                             
                             Section("Order Mode") {
-                                ForEach(WallpaperOrderMode.allCases) { mode in
+                                ForEach(WallpaperOrderMode.allCases, id: \.self) { mode in
                                     Button(action: {
                                         WallpaperChangerService.shared.setOrderMode(mode)
                                     }) {
@@ -564,7 +608,7 @@ public struct SwitchRowView: View {
                             }
                             
                             Section("Wallpapers Source") {
-                                ForEach(WallpaperSource.allCases) { src in
+                                ForEach(WallpaperSource.allCases, id: \.self) { src in
                                     Button(action: {
                                         WallpaperChangerService.shared.setSource(src)
                                     }) {
@@ -2284,50 +2328,124 @@ public struct SwitchRowView: View {
                             }
                         }
                     }
+                } else if item.type == .dockDoor {
+                    let dd = DockDoorService.shared
+                    HStack(spacing: 4) {
+                        Menu {
+                            Section("Hover Trigger Delay") {
+                                ForEach(DockDoorHoverDelay.allCases) { delay in
+                                    Button(action: {
+                                        dd.setHoverDelay(delay)
+                                    }) {
+                                        HStack {
+                                            Text(delay.label)
+                                            if dd.hoverDelay == delay {
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Section("Preview Card Size") {
+                                ForEach(DockDoorCardSize.allCases) { size in
+                                    Button(action: {
+                                        dd.setCardSize(size)
+                                    }) {
+                                        HStack {
+                                            Text(size.label)
+                                            if dd.cardSize == size {
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Section("Preview Elements") {
+                                Button(action: {
+                                    dd.setShowMinimized(!dd.showMinimized)
+                                }) {
+                                    HStack {
+                                        Text("Include Minimized Windows")
+                                        if dd.showMinimized {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                                
+                                Button(action: {
+                                    dd.setShowActionButtons(!dd.showActionButtons)
+                                }) {
+                                    HStack {
+                                        Text("Window Action Buttons (🔴🟡🟢)")
+                                        if dd.showActionButtons {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                                
+                                Button(action: {
+                                    dd.setSoundFeedback(!dd.soundFeedback)
+                                }) {
+                                    HStack {
+                                        Text("Hover Sound Feedback")
+                                        if dd.soundFeedback {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            Button(action: {
+                                dd.checkAccessibilityPermission(prompt: true)
+                            }) {
+                                HStack {
+                                    Text("Check Accessibility Permission")
+                                    Image(systemName: "hand.raised.fill")
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 3) {
+                                Text(item.subtitle ?? (item.isOn ? dd.hoverDelay.label : "Hover Previews"))
+                                    .font(.system(size: 12, weight: item.isOn ? .bold : .medium, design: .rounded))
+                                    .foregroundColor(item.isOn ? Color(red: 0.35, green: 0.75, blue: 0.98) : Color.gray.opacity(0.85))
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 8))
+                                    .foregroundColor(Color.gray.opacity(0.6))
+                            }
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                    }
+                    .contextMenu {
+                        Button(action: {
+                            dd.setEnabled(!dd.isEnabled)
+                        }) {
+                            HStack {
+                                Text(dd.isEnabled ? "Disable DockDoor" : "Enable DockDoor")
+                                Image(systemName: "macwindow.on.rectangle")
+                            }
+                        }
+                        
+                        Divider()
+                        
+                        Button(action: {
+                            dd.checkAccessibilityPermission(prompt: true)
+                        }) {
+                            HStack {
+                                Text("Check Accessibility Permission...")
+                                Image(systemName: "lock.shield")
+                            }
+                        }
+                    }
                 } else if let subtitle = item.subtitle, !subtitle.isEmpty {
                     Text(subtitle)
                         .font(.system(size: 12, weight: .regular))
                         .foregroundColor(Color.gray.opacity(0.85))
                 }
-            }
-            
-            Spacer()
-            
-            // Right Control: Toggle or Action Button
-            if item.isActionOnly {
-                Button(action: {
-                    onAction?()
-                }) {
-                    Image(systemName: "arrow.forward.circle.fill")
-                        .font(.system(size: 16))
-                        .foregroundColor(.gray)
-                }
-                .buttonStyle(.plain)
-            } else {
-                Toggle("", isOn: Binding(
-                    get: { item.isOn },
-                    set: { newValue in
-                        onToggle(newValue)
-                    }
-                ))
-                .toggleStyle(SwitchToggleStyle(tint: .accentColor))
-                .labelsHidden()
-                .disabled(item.isLoading)
-                .opacity(item.isLoading ? 0.6 : 1.0)
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 3.8)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(item.isHovered ? Color(red: 0.16, green: 0.22, blue: 0.32).opacity(0.7) : Color.clear)
-        )
-        .contentShape(Rectangle())
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.15)) {
-                item.isHovered = hovering
-            }
-        }
     }
 }
 
