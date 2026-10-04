@@ -516,6 +516,110 @@ public struct SwitchRowView: View {
                                     .foregroundColor(Color.gray.opacity(0.6))
                             }
                         }
+                        .fixedSize()
+                    }
+                } else if item.type == .autoWallpaper {
+                    HStack(spacing: 6) {
+                        if item.isOn {
+                            Button(action: {
+                                WallpaperChangerService.shared.nextWallpaper(notify: true)
+                            }) {
+                                Image(systemName: "forward.end.fill")
+                                    .font(.system(size: 10.5, weight: .bold))
+                                    .foregroundColor(Color(red: 0.35, green: 0.78, blue: 0.98))
+                            }
+                            .buttonStyle(.plain)
+                            .help("Switch to next wallpaper now (Shuffle/Sequential)")
+                        }
+                        
+                        Menu {
+                            Section("Change Interval") {
+                                ForEach(WallpaperInterval.allCases) { inv in
+                                    Button(action: {
+                                        WallpaperChangerService.shared.setInterval(inv)
+                                    }) {
+                                        HStack {
+                                            Text(inv.label)
+                                            if WallpaperChangerService.shared.interval == inv {
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Section("Order Mode") {
+                                ForEach(WallpaperOrderMode.allCases) { mode in
+                                    Button(action: {
+                                        WallpaperChangerService.shared.setOrderMode(mode)
+                                    }) {
+                                        HStack {
+                                            Label(mode.rawValue, systemImage: mode.icon)
+                                            if WallpaperChangerService.shared.orderMode == mode {
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Section("Wallpapers Source") {
+                                ForEach(WallpaperSource.allCases) { src in
+                                    Button(action: {
+                                        WallpaperChangerService.shared.setSource(src)
+                                    }) {
+                                        HStack {
+                                            Text(src.title)
+                                            if WallpaperChangerService.shared.source == src {
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            Section("Finder Locations") {
+                                Button(action: {
+                                    WallpaperChangerService.shared.revealDefaultWallpapersInFinder()
+                                }) {
+                                    HStack {
+                                        Text("Open Mac Default Wallpapers in Finder ↗")
+                                        Image(systemName: "folder.fill")
+                                    }
+                                }
+                                
+                                Button(action: {
+                                    WallpaperChangerService.shared.revealUserWallpapersInFinder()
+                                }) {
+                                    HStack {
+                                        Text("Open User Wallpapers in Finder ↗")
+                                        Image(systemName: "photo.stack")
+                                    }
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            Button(action: {
+                                WallpaperChangerService.shared.nextWallpaper(notify: true)
+                            }) {
+                                HStack {
+                                    Text("Next Wallpaper Now")
+                                    Image(systemName: "forward.end.fill")
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 3) {
+                                Text(item.isOn ? WallpaperChangerService.shared.interval.shortLabel : "Off")
+                                    .font(.system(size: 12, weight: item.isOn ? .bold : .regular, design: .rounded))
+                                    .foregroundColor(item.isOn ? Color(red: 0.35, green: 0.78, blue: 0.98) : Color.gray.opacity(0.85))
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 8))
+                                    .foregroundColor(Color.gray.opacity(0.6))
+                            }
+                        }
                         .menuStyle(.borderlessButton)
                         .fixedSize()
                     }

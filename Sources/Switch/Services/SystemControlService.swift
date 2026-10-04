@@ -16,6 +16,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
     case mouseJiggler = "mouseJiggler"
     case googlyEyes = "googlyEyes"
     case volumeBoost = "volumeBoost"
+    case autoWallpaper = "autoWallpaper"
     case systemMonitor = "systemMonitor"
     case loomRecorder = "loomRecorder"
     
@@ -52,6 +53,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .mouseJiggler: return "Auto Mouse Mover"
         case .googlyEyes: return "Googly Eyes"
         case .volumeBoost: return "Volume Boost"
+        case .autoWallpaper: return "Auto Wallpaper"
         case .systemMonitor: return "System Monitor"
         case .loomRecorder: return "Loom Screen Recorder"
         case .lockScreen: return "Lock Screen"
@@ -86,6 +88,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .mouseJiggler: return "cursorarrow.motionlines"
         case .googlyEyes: return "eyes"
         case .volumeBoost: return "speaker.wave.3.fill"
+        case .autoWallpaper: return "photo.stack.fill"
         case .systemMonitor: return "gauge.with.needle.fill"
         case .loomRecorder: return "record.circle.fill"
         case .lockScreen: return "lock.fill"
@@ -243,6 +246,10 @@ public final class SystemControlService: @unchecked Sendable {
             let v = VolumeBoostService.shared
             return (v.isActive, v.isActive ? v.selectedLevel.label : nil)
             
+        case .autoWallpaper:
+            let w = WallpaperChangerService.shared
+            return (w.isEnabled, w.statusSubtitle)
+            
         case .systemMonitor:
             let mon = SystemMonitorService.shared
             return (mon.isEnabled, mon.isEnabled ? "Menu Bar" : nil)
@@ -381,6 +388,11 @@ public final class SystemControlService: @unchecked Sendable {
                 } else {
                     VolumeBoostService.shared.stop()
                 }
+            }
+            
+        case .autoWallpaper:
+            DispatchQueue.main.async {
+                WallpaperChangerService.shared.setEnabled(isOn)
             }
             
         case .systemMonitor:
@@ -615,6 +627,10 @@ public final class SystemControlService: @unchecked Sendable {
             _ = Shell.run("/System/Library/CoreServices/Menu Extras/User.menu/Contents/Resources/CGSession -suspend || pmset displaysleepnow")
         case .emptyTrash:
             _ = Shell.run("rm -rf ~/.Trash/* 2>/dev/null")
+        case .autoWallpaper:
+            DispatchQueue.main.async {
+                WallpaperChangerService.shared.nextWallpaper(notify: true)
+            }
         case .forceQuitApps:
             let quittedCount = forceQuitAllApps()
             DispatchQueue.main.async {

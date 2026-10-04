@@ -65,6 +65,7 @@ Download the pre-compiled, codesigned app bundle directly from GitHub Releases:
 | 🛡️ **Self Control & Recovery** | Comprehensive self-mastery companion: **Live precision streak counter** (days, hours, mins, secs), **90-Day Neuroplasticity Reboot Roadmap**, **Urge SOS Center** with guided Box Breathing pacer & sensory grounding, **1-click Mac-wide Adult Content Blocker**, daily HALT trigger journal, and unshakeable personal motivation anchors. |
 | 📍 **Location Services Toggle** | 1-click **ON / OFF switch for macOS Location Services** with real-time CoreLocation status monitoring (`location.fill` / `location.slash.fill`), instant jump to Privacy & Security settings, and automated master toggle integration. Turning off Location Services blocks all apps, browsers, and background trackers from accessing your physical GPS coordinates. |
 | ⚡️ **Instant RAM & GPU Reset** | Intelligent anti-lag engine that flushes clogged inactive system memory, restores hardware color lookup tables, clears zombie Metal compiler JIT heaps, terminates leaky WebKit GPU processes, flushes QuickLook caches, and features an **Auto-Guard Mode** that automatically clears memory bottlenecks when RAM usage crosses 85%. |
+| 🖼️ **Auto Wallpaper Changer** | Automatically rotates desktop wallpapers every **5 minutes** (or custom intervals: 1m, 5m, 10m, 15m, 30m, 1h, 2h, Daily) with **🔀 Shuffle** or **🔁 Sequential** modes. Easily cycle through **Mac Default Wallpapers** (`/System/Library/Desktop Pictures`), **User Wallpapers** (`~/Pictures/Wallpapers`), All Pictures (`~/Pictures`), or Custom folders, with **1-click Finder shortcuts** to open wallpaper folders instantly and a manual `⏭️ Next Wallpaper Now` trigger button! |
 
 ---
 
@@ -106,6 +107,7 @@ Switch packs over **27 native macOS switches** into an ultra-responsive, beautif
 - **Empty Trash**: 1-click trash purge.
 - **Force Quit Apps**: Closes all foreground user apps in one click.
 - **Instant RAM & GPU Reset**: Anti-lag maintenance engine that purges inactive Mach VM memory, flushes WebKit GPU processes, terminates stale Metal compiler JIT heaps, restores display color lookup tables, and flushes QuickLook caches. Features **Auto-Guard Mode** (>85% RAM threshold), live memory diagnostics popover, instant reset button (`bolt.fill`), and audio feedback chime.
+- **Auto Wallpaper Changer**: Automatically rotates desktop wallpapers every 5 minutes with photo folder cycling (Mac Default Wallpapers at `/System/Library/Desktop Pictures`, User Wallpapers at `~/Pictures/Wallpapers`, or Custom folder), 1-click Finder reveal links, and manual next wallpaper skip.
 
 ---
 

@@ -47,6 +47,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = ClipboardService.shared
         _ = StickyNotesService.shared
         _ = SelfControlService.shared
+        _ = RAMGPUResetService.shared
+        _ = WallpaperChangerService.shared
         
         setupPopover()
         
