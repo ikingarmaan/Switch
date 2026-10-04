@@ -16,7 +16,6 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
     case mouseJiggler = "mouseJiggler"
     case googlyEyes = "googlyEyes"
     case volumeBoost = "volumeBoost"
-    case grammarCoach = "grammarCoach"
     case systemMonitor = "systemMonitor"
     case loomRecorder = "loomRecorder"
     
@@ -53,7 +52,6 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .mouseJiggler: return "Auto Mouse Mover"
         case .googlyEyes: return "Googly Eyes"
         case .volumeBoost: return "Volume Boost"
-        case .grammarCoach: return "Grammar Coach"
         case .systemMonitor: return "System Monitor"
         case .loomRecorder: return "Loom Screen Recorder"
         case .lockScreen: return "Lock Screen"
@@ -88,7 +86,6 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .mouseJiggler: return "cursorarrow.motionlines"
         case .googlyEyes: return "eyes"
         case .volumeBoost: return "speaker.wave.3.fill"
-        case .grammarCoach: return "character.cursor.ibeam"
         case .systemMonitor: return "gauge.with.needle.fill"
         case .loomRecorder: return "record.circle.fill"
         case .lockScreen: return "lock.fill"
@@ -246,10 +243,6 @@ public final class SystemControlService: @unchecked Sendable {
             let v = VolumeBoostService.shared
             return (v.isActive, v.isActive ? v.selectedLevel.label : nil)
             
-        case .grammarCoach:
-            let coach = GrammarCoachService.shared
-            return (coach.isEnabled, coach.isEnabled ? coach.currentStyle.rawValue : nil)
-            
         case .systemMonitor:
             let mon = SystemMonitorService.shared
             return (mon.isEnabled, mon.isEnabled ? "Menu Bar" : nil)
@@ -388,11 +381,6 @@ public final class SystemControlService: @unchecked Sendable {
                 } else {
                     VolumeBoostService.shared.stop()
                 }
-            }
-            
-        case .grammarCoach:
-            DispatchQueue.main.async {
-                GrammarCoachService.shared.setEnabled(isOn)
             }
             
         case .systemMonitor:
@@ -627,10 +615,6 @@ public final class SystemControlService: @unchecked Sendable {
             _ = Shell.run("/System/Library/CoreServices/Menu Extras/User.menu/Contents/Resources/CGSession -suspend || pmset displaysleepnow")
         case .emptyTrash:
             _ = Shell.run("rm -rf ~/.Trash/* 2>/dev/null")
-        case .grammarCoach:
-            DispatchQueue.main.async {
-                GrammarCoachService.shared.showTypingBox()
-            }
         case .forceQuitApps:
             let quittedCount = forceQuitAllApps()
             DispatchQueue.main.async {

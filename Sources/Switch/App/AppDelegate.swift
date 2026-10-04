@@ -37,7 +37,6 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = AutoScrollService.shared
         _ = GooglyEyesService.shared
         _ = VolumeBoostService.shared
-        _ = GrammarCoachService.shared
         _ = SystemMonitorService.shared
         SystemMonitorService.shared.restoreStateIfNeeded()
         _ = LoomRecorderService.shared

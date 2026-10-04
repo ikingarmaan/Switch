@@ -174,32 +174,6 @@ public final class SwitchListViewModel: ObservableObject {
             }
             .store(in: &cancellables)
             
-        NotificationCenter.default.publisher(for: .grammarCoachStateDidChange)
-            .receive(on: RunLoop.main)
-            .sink { [weak self] notif in
-                guard let self = self,
-                      let isEnabled = notif.object as? Bool,
-                      let index = self.switches.firstIndex(where: { $0.type == .grammarCoach })
-                else { return }
-                self.switches[index].isOn = isEnabled
-                self.switches[index].isLoading = false
-                self.switches[index].subtitle = isEnabled ? GrammarCoachService.shared.currentStyle.rawValue : nil
-            }
-            .store(in: &cancellables)
-            
-        NotificationCenter.default.publisher(for: .grammarCoachStyleDidChange)
-            .receive(on: RunLoop.main)
-            .sink { [weak self] notif in
-                guard let self = self,
-                      let style = notif.object as? WritingStyle,
-                      let index = self.switches.firstIndex(where: { $0.type == .grammarCoach })
-                else { return }
-                if self.switches[index].isOn {
-                    self.switches[index].subtitle = style.rawValue
-                }
-            }
-            .store(in: &cancellables)
-            
         NotificationCenter.default.publisher(for: .systemMonitorDidChange)
             .receive(on: RunLoop.main)
             .sink { [weak self] notif in
@@ -508,7 +482,7 @@ public final class SwitchListViewModel: ObservableObject {
     }
     
     private func setupSwitches() {
-        // Ordered as shown in user's image + lockKeyboard + cameraPreview + timer + amphetamine + mouseJiggler + autoScroll + googlyEyes + volumeBoost + grammarCoach + systemMonitor + loomRecorder + forceQuitApps + autoVPN + tidyFolders + adblockDNS + knockScreenshot + clipboardManager + stickyNotes + selfControl + locationServices + ramGpuReset
+        // Ordered as shown in user's image + lockKeyboard + cameraPreview + timer + amphetamine + mouseJiggler + autoScroll + googlyEyes + volumeBoost + systemMonitor + loomRecorder + forceQuitApps + autoVPN + tidyFolders + adblockDNS + knockScreenshot + clipboardManager + stickyNotes + selfControl + locationServices + ramGpuReset
         let initialTypes: [SwitchType] = [
             .hideDesktop,
             .keepAwake,
@@ -525,7 +499,6 @@ public final class SwitchListViewModel: ObservableObject {
             .autoScroll,
             .googlyEyes,
             .volumeBoost,
-            .grammarCoach,
             .systemMonitor,
             .loomRecorder,
             .forceQuitApps,
