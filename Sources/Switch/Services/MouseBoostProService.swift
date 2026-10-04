@@ -9,6 +9,24 @@ public extension Notification.Name {
     static let mouseBoostProHUDDidChange = Notification.Name("SwitchMouseBoostProHUDDidChange")
 }
 
+public enum FinderRightClickTrigger: String, CaseIterable, Identifiable, Codable, Sendable {
+    case all = "all"
+    case alwaysInFinder = "alwaysInFinder"
+    case optionRightClick = "optionRightClick"
+    case middleClick = "middleClick"
+    
+    public var id: String { rawValue }
+    
+    public var label: String {
+        switch self {
+        case .all: return "Right-Click in Finder & ⌥+Right-Click (Recommended)"
+        case .alwaysInFinder: return "Right-Click in Finder / Desktop"
+        case .optionRightClick: return "Option (⌥) + Right-Click"
+        case .middleClick: return "Middle-Click (Wheel Click)"
+        }
+    }
+}
+
 public enum MouseBoostMiddleClickAction: String, CaseIterable, Identifiable, Codable, Sendable {
     case superMenu = "superMenu"
     case closeWindow = "closeWindow"
@@ -150,7 +168,7 @@ public final class MouseBoostProService: NSObject, ObservableObject, @unchecked 
     private let keyButton5Action = "switch.mouseBoostPro.button5Action"
     private let keyScrollSpeed = "switch.mouseBoostPro.scrollSpeed"
     private let keyInvertScrollWheel = "switch.mouseBoostPro.invertScrollWheel"
-    private let keyOptionRightClickMenu = "switch.mouseBoostPro.optionRightClickMenu"
+    private let keyFinderRightClickTrigger = "switch.mouseBoostPro.finderRightClickTrigger"
     private let keySoundFeedback = "switch.mouseBoostPro.soundFeedback"
     
     @Published public private(set) var isEnabled: Bool = false
@@ -169,8 +187,8 @@ public final class MouseBoostProService: NSObject, ObservableObject, @unchecked 
     @Published public var invertScrollWheel: Bool = false {
         didSet { UserDefaults.standard.set(invertScrollWheel, forKey: keyInvertScrollWheel) }
     }
-    @Published public var optionRightClickMenu: Bool = true {
-        didSet { UserDefaults.standard.set(optionRightClickMenu, forKey: keyOptionRightClickMenu) }
+    @Published public var finderRightClickTrigger: FinderRightClickTrigger = .all {
+        didSet { UserDefaults.standard.set(finderRightClickTrigger.rawValue, forKey: keyFinderRightClickTrigger) }
     }
     @Published public var soundFeedback: Bool = true {
         didSet { UserDefaults.standard.set(soundFeedback, forKey: keySoundFeedback) }
@@ -185,7 +203,7 @@ public final class MouseBoostProService: NSObject, ObservableObject, @unchecked 
     
     public var statusSubtitle: String? {
         if isEnabled {
-            return "\(scrollSpeed.shortLabel) Scroll · \(middleClickAction == .superMenu ? "Super HUD" : middleClickAction.label.components(separatedBy: " ").first ?? "Active")"
+            return "\(scrollSpeed.shortLabel) Scroll · Right-Click HUD"
         }
         return nil
     }
@@ -236,10 +254,11 @@ public final class MouseBoostProService: NSObject, ObservableObject, @unchecked 
             self.invertScrollWheel = false
         }
         
-        if defaults.object(forKey: keyOptionRightClickMenu) != nil {
-            self.optionRightClickMenu = defaults.bool(forKey: keyOptionRightClickMenu)
+        if let savedTrigger = defaults.string(forKey: keyFinderRightClickTrigger),
+           let trigger = FinderRightClickTrigger(rawValue: savedTrigger) {
+            self.finderRightClickTrigger = trigger
         } else {
-            self.optionRightClickMenu = true
+            self.finderRightClickTrigger = .all
         }
         
         if defaults.object(forKey: keySoundFeedback) != nil {
@@ -296,14 +315,23 @@ public final class MouseBoostProService: NSObject, ObservableObject, @unchecked 
         NotificationCenter.default.post(name: .mouseBoostProStateDidChange, object: isEnabled)
     }
     
-    public func setOptionRightClickMenu(_ enable: Bool) {
-        self.optionRightClickMenu = enable
+    public func setFinderRightClickTrigger(_ trigger: FinderRightClickTrigger) {
+        self.finderRightClickTrigger = trigger
         NotificationCenter.default.post(name: .mouseBoostProStateDidChange, object: isEnabled)
     }
     
     public func setSoundFeedback(_ sound: Bool) {
         self.soundFeedback = sound
         NotificationCenter.default.post(name: .mouseBoostProStateDidChange, object: isEnabled)
+    }
+    
+    public func setExplicitPath(_ path: String) {
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: path, isDirectory: &isDir) {
+            self.currentFinderPath = isDir.boolValue ? path : (path as NSString).deletingLastPathComponent
+        } else {
+            self.currentFinderPath = path
+        }
     }
     
     @discardableResult
@@ -422,13 +450,32 @@ public final class MouseBoostProService: NSObject, ObservableObject, @unchecked 
             }
         }
         
-        // 3. Handle Option + Right Click -> Super Menu HUD
-        if type == .rightMouseDown && optionRightClickMenu {
-            if event.flags.contains(.maskAlternate) {
+        // 3. Handle Right Click in Finder & Desktop -> Super Action HUD
+        if type == .rightMouseDown {
+            let isOptionPressed = event.flags.contains(.maskAlternate)
+            let frontApp = NSWorkspace.shared.frontmostApplication
+            let isFinderOrDesktop = (frontApp?.bundleIdentifier == "com.apple.finder" || frontApp?.bundleIdentifier == "com.apple.dock")
+            
+            let shouldTrigger: Bool = {
+                switch self.finderRightClickTrigger {
+                case .all:
+                    return isOptionPressed || isFinderOrDesktop
+                case .alwaysInFinder:
+                    return isFinderOrDesktop
+                case .optionRightClick:
+                    return isOptionPressed
+                case .middleClick:
+                    return false
+                }
+            }()
+            
+            if shouldTrigger {
                 DispatchQueue.main.async {
                     self.showSuperHUD(at: mouseLocation)
                 }
-                return nil
+                if isOptionPressed {
+                    return nil // Consume Option+Right-click so macOS standard context menu doesn't interfere
+                }
             }
         }
         
@@ -631,9 +678,15 @@ public final class MouseBoostProService: NSObject, ObservableObject, @unchecked 
     public func updateCurrentFinderPath() {
         let script = """
         tell application "Finder"
-            if exists Finder window 1 then
-                set currentFolder to (target of Finder window 1) as alias
-                return POSIX path of currentFolder
+            set sel to selection
+            if (count of sel) > 0 then
+                try
+                    return POSIX path of (item 1 of sel as alias)
+                on error
+                    return POSIX path of (target of Finder window 1 as alias)
+                end try
+            else if exists Finder window 1 then
+                return POSIX path of (target of Finder window 1 as alias)
             else
                 return POSIX path of (path to desktop folder as alias)
             end if
@@ -641,7 +694,13 @@ public final class MouseBoostProService: NSObject, ObservableObject, @unchecked 
         """
         let (output, success) = Shell.runAppleScript(script)
         if success && !output.isEmpty {
-            self.currentFinderPath = output.trimmingCharacters(in: .whitespacesAndNewlines)
+            let path = output.trimmingCharacters(in: .whitespacesAndNewlines)
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: path, isDirectory: &isDir) {
+                self.currentFinderPath = isDir.boolValue ? path : (path as NSString).deletingLastPathComponent
+            } else {
+                self.currentFinderPath = path
+            }
         } else {
             self.currentFinderPath = NSHomeDirectory() + "/Desktop"
         }

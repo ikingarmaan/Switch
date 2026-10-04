@@ -2540,24 +2540,28 @@ public struct SwitchRowView: View {
                                 }
                             }
                             
-                            Section("Features & Direction") {
+                            Section("Finder Right-Click Trigger") {
+                                ForEach(FinderRightClickTrigger.allCases) { trig in
+                                    Button(action: {
+                                        mb.setFinderRightClickTrigger(trig)
+                                    }) {
+                                        HStack {
+                                            Text(trig.label)
+                                            if mb.finderRightClickTrigger == trig {
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Section("Mouse Features") {
                                 Button(action: {
                                     mb.setInvertScrollWheel(!mb.invertScrollWheel)
                                 }) {
                                     HStack {
                                         Text("Invert Mouse Wheel Direction")
                                         if mb.invertScrollWheel {
-                                            Image(systemName: "checkmark")
-                                        }
-                                    }
-                                }
-                                
-                                Button(action: {
-                                    mb.setOptionRightClickMenu(!mb.optionRightClickMenu)
-                                }) {
-                                    HStack {
-                                        Text("⌥ + Right Click Super HUD")
-                                        if mb.optionRightClickMenu {
                                             Image(systemName: "checkmark")
                                         }
                                     }

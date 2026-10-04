@@ -88,9 +88,113 @@ cat << 'EOF' > "$CONTENTS_DIR/Info.plist"
     <key>NSAudioCaptureUsageDescription</key>
     <string>Switch requires audio access to provide system volume boost.</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Switch requires microphone access to detect chassis double-knocks for instant screenshots and to record voice narration in Loom screen recordings.</string>
+    <string>Switch requires microphone access to detect chassis double-knocks for instant screenshots and to record voice narration in Loom screen recordings and Wispr Flow voice typing.</string>
     <key>NSScreenCaptureUsageDescription</key>
     <string>Switch requires screen recording permission to record your screen for Loom recordings and capture system audio.</string>
+    <key>NSServices</key>
+    <array>
+        <dict>
+            <key>NSMenuItem</key>
+            <dict>
+                <key>default</key>
+                <string>Switch: MouseBoost Pro Super Menu</string>
+            </dict>
+            <key>NSMessage</key>
+            <string>openMouseBoostHUDService</string>
+            <key>NSPortName</key>
+            <string>Switch</string>
+            <key>NSSendFileTypes</key>
+            <array>
+                <string>public.item</string>
+                <string>public.folder</string>
+            </array>
+            <key>NSSendTypes</key>
+            <array>
+                <string>NSFilenamesPboardType</string>
+                <string>public.plain-text</string>
+            </array>
+        </dict>
+        <dict>
+            <key>NSMenuItem</key>
+            <dict>
+                <key>default</key>
+                <string>Switch: New File Here...</string>
+            </dict>
+            <key>NSMessage</key>
+            <string>createNewFileService</string>
+            <key>NSPortName</key>
+            <string>Switch</string>
+            <key>NSSendFileTypes</key>
+            <array>
+                <string>public.item</string>
+                <string>public.folder</string>
+            </array>
+            <key>NSSendTypes</key>
+            <array>
+                <string>NSFilenamesPboardType</string>
+            </array>
+        </dict>
+        <dict>
+            <key>NSMenuItem</key>
+            <dict>
+                <key>default</key>
+                <string>Switch: Open Terminal Here</string>
+            </dict>
+            <key>NSMessage</key>
+            <string>openTerminalService</string>
+            <key>NSPortName</key>
+            <string>Switch</string>
+            <key>NSSendFileTypes</key>
+            <array>
+                <string>public.item</string>
+                <string>public.folder</string>
+            </array>
+            <key>NSSendTypes</key>
+            <array>
+                <string>NSFilenamesPboardType</string>
+            </array>
+        </dict>
+        <dict>
+            <key>NSMenuItem</key>
+            <dict>
+                <key>default</key>
+                <string>Switch: Open in VS Code</string>
+            </dict>
+            <key>NSMessage</key>
+            <string>openVSCodeService</string>
+            <key>NSPortName</key>
+            <string>Switch</string>
+            <key>NSSendFileTypes</key>
+            <array>
+                <string>public.item</string>
+                <string>public.folder</string>
+            </array>
+            <key>NSSendTypes</key>
+            <array>
+                <string>NSFilenamesPboardType</string>
+            </array>
+        </dict>
+        <dict>
+            <key>NSMenuItem</key>
+            <dict>
+                <key>default</key>
+                <string>Switch: Copy Full Path</string>
+            </dict>
+            <key>NSMessage</key>
+            <string>copyPathService</string>
+            <key>NSPortName</key>
+            <string>Switch</string>
+            <key>NSSendFileTypes</key>
+            <array>
+                <string>public.item</string>
+                <string>public.folder</string>
+            </array>
+            <key>NSSendTypes</key>
+            <array>
+                <string>NSFilenamesPboardType</string>
+            </array>
+        </dict>
+    </array>
 </dict>
 </plist>
 EOF
