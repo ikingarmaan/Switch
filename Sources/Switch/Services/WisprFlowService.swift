@@ -466,7 +466,7 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
         guard !isLKeyHeld else { return }
         isLKeyHeld = true
         
-        // Start 2.0 second hold timer
+        // Start 1.0 second hold timer
         lKeyHoldWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             guard let self = self, self.isLKeyHeld, self.isEnabled else { return }
@@ -476,7 +476,7 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
             }
         }
         self.lKeyHoldWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: workItem)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: workItem)
     }
     
     public func handleLKeyUp() {
@@ -630,13 +630,18 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
             input.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] (buffer, time) in
                 guard let self = self else { return }
                 
-                // Calculate RMS audio power for real-time waveform visualizer
-                guard let channelData = buffer.floatChannelData?[0] else { return }
-                let frameLength = Int(buffer.frameLength)
+                // Adaptive sensitivity boost (2.5x gain with soft limiting) to capture low voices & whispers clearly
+                let boostMultiplier: Float = 2.5
                 var sum: Float = 0.0
-                for i in 0..<frameLength {
-                    let sample = channelData[i]
-                    sum += sample * sample
+                let frameLength = Int(buffer.frameLength)
+                
+                if let channelData = buffer.floatChannelData?[0] {
+                    for i in 0..<frameLength {
+                        let boosted = channelData[i] * boostMultiplier
+                        let clamped = max(-1.0, min(1.0, boosted))
+                        channelData[i] = clamped
+                        sum += clamped * clamped
+                    }
                 }
                 let rms = sqrt(sum / max(1, Float(frameLength)))
                 self.currentRMSPower = rms
@@ -1184,7 +1189,48 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
             result = regex.stringByReplacingMatches(in: result, options: [], range: NSRange(location: 0, length: result.utf16.count), withTemplate: "")
         }
         
-        // Ensure proper capitalization of the first letter
+        // Auto Shift 1: Capitalize after sentence boundaries (. ? ! \n)
+        if let regex = try? NSRegularExpression(pattern: "(^|[\\.?!\\n]\\s+)([a-z])", options: []) {
+            let matches = regex.matches(in: result, options: [], range: NSRange(location: 0, length: result.utf16.count))
+            for match in matches.reversed() {
+                if let range = Range(match.range, in: result) {
+                    let matchedStr = String(result[range])
+                    let capitalized = matchedStr.uppercased()
+                    result.replaceSubrange(range, with: capitalized)
+                }
+            }
+        }
+        
+        // Auto Shift 2: Capitalize standalone 'i' pronoun & contractions (i -> I, i'm -> I'm, i'll -> I'll, i've -> I've, i'd -> I'd)
+        let pronounFixes: [(String, String)] = [
+            ("(?i)\\bi\\b", "I"),
+            ("(?i)\\bi'm\\b", "I'm"),
+            ("(?i)\\bi'll\\b", "I'll"),
+            ("(?i)\\bi've\\b", "I've"),
+            ("(?i)\\bi'd\\b", "I'd")
+        ]
+        for (pat, repl) in pronounFixes {
+            if let regex = try? NSRegularExpression(pattern: pat, options: []) {
+                result = regex.stringByReplacingMatches(in: result, options: [], range: NSRange(location: 0, length: result.utf16.count), withTemplate: repl)
+            }
+        }
+        
+        // Auto Shift 3: Capitalize proper nouns, brands, days, and tech terms
+        let properNouns = [
+            "Google", "Apple", "Mac", "MacBook", "iPhone", "iPad", "Switch", "WhatsApp", "YouTube",
+            "Instagram", "Telegram", "LinkedIn", "Twitter", "Slack", "Zoom", "Gmail", "GitHub",
+            "Microsoft", "Windows", "Android", "ChatGPT", "Gemini", "Amazon", "Netflix",
+            "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
+            "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December",
+            "India", "Delhi", "Mumbai", "Bangalore", "Bengaluru", "Hyderabad", "Pune", "Kolkata", "Chennai", "Noida", "Gurgaon", "Jaipur", "Goa"
+        ]
+        for noun in properNouns {
+            if let regex = try? NSRegularExpression(pattern: "(?i)\\b\(noun)\\b", options: []) {
+                result = regex.stringByReplacingMatches(in: result, options: [], range: NSRange(location: 0, length: result.utf16.count), withTemplate: noun)
+            }
+        }
+        
+        // Ensure first character of entire transcription is capitalized
         if let first = result.first, first.isLowercase {
             result = result.prefix(1).uppercased() + result.dropFirst()
         }
