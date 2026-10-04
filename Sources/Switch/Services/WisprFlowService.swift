@@ -681,23 +681,33 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
             input.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] (buffer, time) in
                 guard let self = self else { return }
                 
-                // Adaptive sensitivity boost (2.5x gain with soft limiting) to capture low voices & whispers clearly
-                let boostMultiplier: Float = 2.5
-                var sum: Float = 0.0
                 let frameLength = Int(buffer.frameLength)
+                guard frameLength > 0, let channelData = buffer.floatChannelData?[0] else { return }
                 
-                if let channelData = buffer.floatChannelData?[0] {
-                    for i in 0..<frameLength {
-                        let boosted = channelData[i] * boostMultiplier
-                        let clamped = max(-1.0, min(1.0, boosted))
-                        channelData[i] = clamped
-                        sum += clamped * clamped
-                    }
+                // 1. Calculate RMS power of incoming audio
+                var sum: Float = 0.0
+                for i in 0..<frameLength {
+                    sum += channelData[i] * channelData[i]
                 }
-                let rms = sqrt(sum / max(1, Float(frameLength)))
+                let rms = sqrt(sum / Float(frameLength))
                 self.currentRMSPower = rms
                 
-                // Convert buffer to 16kHz Int16 format and write to file
+                // 2. High-Fidelity Smooth Automatic Gain Control (AGC)
+                // Boosts quiet voices & whispers smoothly without flat-top clipping
+                let targetRMS: Float = 0.14
+                let gain: Float
+                if rms > 0.001 && rms < targetRMS {
+                    gain = min(2.8, targetRMS / max(0.005, rms))
+                } else {
+                    gain = 1.0
+                }
+                
+                // Apply gain with soft tanh saturation (analog curve, zero digital distortion)
+                for i in 0..<frameLength {
+                    channelData[i] = tanh(channelData[i] * gain)
+                }
+                
+                // 3. Convert buffer to 16kHz Int16 format and write to file
                 let convertedBuffer = AVAudioPCMBuffer(pcmFormat: recordingFormat, frameCapacity: AVAudioFrameCount(Double(buffer.frameLength) * 16000.0 / inputFormat.sampleRate) + 100)!
                 var error: NSError? = nil
                 
@@ -1219,13 +1229,14 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
     private func cleanUpHinglishPhoneticsAndCommas(_ text: String) -> String {
         var result = text
         
-        // Comprehensive phonetic dictionary fixes for acoustic speech recognizer mishearings
+        // Comprehensive phonetic dictionary fixes for acoustic speech recognizer mishearings (all lowercase targets)
         let phoneticReplacements: [(String, String)] = [
-            ("(?i)\\bmain\\s+nahi\\s+kanga\\b", "Main nahi kahunga"),
+            ("(?i)\\bmain\\s+nahi\\s+kanga\\b", "main nahi kahunga"),
             ("(?i)\\bnahi\\s+kanga\\b", "nahi kahunga"),
-            ("(?i)\\bmain\\s+sikha\\s+ga\\b", "Main seekhunga"),
+            ("(?i)\\bmain\\s+sikha\\s+ga\\b", "main seekhunga"),
             ("(?i)\\bsikha\\s+ga\\b", "seekhega"),
             ("(?i)\\bsikha\\s+ja\\b", "seekha"),
+            ("(?i)\\bsikha\\s+gaya\\b", "seekh gaya"),
             ("(?i)\\bkaruga\\b", "karunga"),
             ("(?i)\\bkarugi\\b", "karungi"),
             ("(?i)\\bboluga\\b", "bolunga"),
@@ -1244,9 +1255,9 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
             ("(?i)\\bde\\s+duga\\b", "de dunga"),
             ("(?i)\\ble\\s+duga\\b", "le dunga"),
             ("(?i)\\bbhej\\s+duga\\b", "bhej dunga"),
-            ("(?i)\\bmera,\\s*nama\\s+hai\\b", "Mera naam hai"),
-            ("(?i)\\bmera,\\s*naam\\s+hai\\b", "Mera naam hai"),
-            ("(?i)\\bmera\\s+nama\\s+hai\\b", "Mera naam hai"),
+            ("(?i)\\bmera,\\s*nama\\s+hai\\b", "mera naam hai"),
+            ("(?i)\\bmera,\\s*naam\\s+hai\\b", "mera naam hai"),
+            ("(?i)\\bmera\\s+nama\\s+hai\\b", "mera naam hai"),
             ("(?i)\\bmera,\\s*nama\\b", "mera naam"),
             ("(?i)\\bmera\\s+nama\\b", "mera naam"),
             ("(?i)\\btera,\\s*nama\\b", "tera naam"),
@@ -1267,69 +1278,57 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
             }
         }
         
-        // Remove misplaced commas after common Hindi pronouns/conjunctions/words
-        let commaPatterns: [String] = [
-            "(?i)\\b(mera|tera|apna|uska|humara|tumhara|unka|kya|kyun|kaise|kab|kahan|yeh|woh|main|hum|aap|tum|bhi|nahi|nahin|toh|par|aur|ki|ke|ko|se|me|mein)\\s*,\\s*(?=[a-zA-Z0-9])"
-        ]
-        for pattern in commaPatterns {
-            if let regex = try? NSRegularExpression(pattern: pattern, options: []) {
-                result = regex.stringByReplacingMatches(in: result, options: [], range: NSRange(location: 0, length: result.utf16.count), withTemplate: "$1 ")
-            }
-        }
-        
         return result
     }
     
     private func cleanUpPunctuationAndFormatting(_ text: String) -> String {
         var result = text
         
-        // Remove space before punctuation: "word , text" -> "word, text"
+        // 1. Remove space before punctuation: "word , text" -> "word, text"
         if let regex = try? NSRegularExpression(pattern: "\\s+([,\\.!\\?;:])", options: []) {
             result = regex.stringByReplacingMatches(in: result, options: [], range: NSRange(location: 0, length: result.utf16.count), withTemplate: "$1")
         }
         
-        // Fix multiple commas: ",," or ", ," -> ","
+        // 2. Remove misplaced commas before/after common verbal pauses, connectors, pronouns, and auxiliary verbs
+        let commaPatterns: [String] = [
+            // Commas before Hindi / English words: e.g. "Main, nahi" -> "Main nahi"
+            "(?i)\\s*,\\s*(hai|hain|tha|thi|the|hoga|hogi|honge|nahi|nahin|karunga|karungi|seekhunga|kahunga|karega|karegi|kya|kyun|kaise|kab|kahan|aur|par|lekin|bhi|toh|se|ko|ka|ki|ke|me|mein|bhai|yaar|dost|is|am|are|was|were|will|would|can|could|should|have|has|had|do|does|did|to|for|of|in|on|at|by|with|from|that|this|it|and|or|but|so|because|then)\\b",
+            // Commas after pronouns / subjects: e.g. "Mera, naam" -> "Mera naam"
+            "(?i)\\b(main|hum|aap|tum|mera|meri|mere|tera|teri|tere|uska|uski|uske|unka|unki|unke|apna|apni|apne|kya|kyun|kaise|kab|kahan|yeh|woh|bhai|yaar|dost|i|you|he|she|they|we|it|this|that)\\s*,\\s*"
+        ]
+        for pattern in commaPatterns {
+            if let regex = try? NSRegularExpression(pattern: pattern, options: []) {
+                result = regex.stringByReplacingMatches(in: result, options: [], range: NSRange(location: 0, length: result.utf16.count), withTemplate: " $1 ")
+            }
+        }
+        
+        // 3. Fix double commas & clean up comma-period combos
         if let regex = try? NSRegularExpression(pattern: ",[\\s,]+", options: []) {
             result = regex.stringByReplacingMatches(in: result, options: [], range: NSRange(location: 0, length: result.utf16.count), withTemplate: ", ")
         }
-        
-        // Fix comma before period: ",." -> "."
-        if let regex = try? NSRegularExpression(pattern: ",\\s*\\.", options: []) {
-            result = regex.stringByReplacingMatches(in: result, options: [], range: NSRange(location: 0, length: result.utf16.count), withTemplate: ".")
+        if let regex = try? NSRegularExpression(pattern: ",\\s*([\\.!\\?])", options: []) {
+            result = regex.stringByReplacingMatches(in: result, options: [], range: NSRange(location: 0, length: result.utf16.count), withTemplate: "$1")
         }
         
-        // Remove trailing commas or colons at the end of the transcription
-        if let regex = try? NSRegularExpression(pattern: "[,;:]+$", options: []) {
+        // 4. Remove leading/trailing commas
+        if let regex = try? NSRegularExpression(pattern: "^[,\\s]+|[,;:]+$", options: []) {
             result = regex.stringByReplacingMatches(in: result, options: [], range: NSRange(location: 0, length: result.utf16.count), withTemplate: "")
         }
         
-        // Auto Shift 1: Capitalize after sentence boundaries (. ? ! \n)
-        if let regex = try? NSRegularExpression(pattern: "(^|[\\.?!\\n]\\s+)([a-z])", options: []) {
-            let matches = regex.matches(in: result, options: [], range: NSRange(location: 0, length: result.utf16.count))
-            for match in matches.reversed() {
-                if let range = Range(match.range, in: result) {
-                    let matchedStr = String(result[range])
-                    let capitalized = matchedStr.uppercased()
-                    result.replaceSubrange(range, with: capitalized)
-                }
-            }
+        // 5. If the entire utterance is short (<= 8 words) and lacks list markers, strip all remaining commas
+        let words = result.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+        if words.count <= 8 {
+            result = result.replacingOccurrences(of: ",", with: "")
         }
         
-        // Auto Shift 2: Capitalize standalone 'i' pronoun & contractions (i -> I, i'm -> I'm, i'll -> I'll, i've -> I've, i'd -> I'd)
-        let pronounFixes: [(String, String)] = [
-            ("(?i)\\bi\\b", "I"),
-            ("(?i)\\bi'm\\b", "I'm"),
-            ("(?i)\\bi'll\\b", "I'll"),
-            ("(?i)\\bi've\\b", "I've"),
-            ("(?i)\\bi'd\\b", "I'd")
-        ]
-        for (pat, repl) in pronounFixes {
-            if let regex = try? NSRegularExpression(pattern: pat, options: []) {
-                result = regex.stringByReplacingMatches(in: result, options: [], range: NSRange(location: 0, length: result.utf16.count), withTemplate: repl)
-            }
+        // Normalize multiple whitespaces
+        if let regex = try? NSRegularExpression(pattern: "\\s{2,}", options: []) {
+            result = regex.stringByReplacingMatches(in: result, options: [], range: NSRange(location: 0, length: result.utf16.count), withTemplate: " ")
         }
+        result = result.trimmingCharacters(in: .whitespacesAndNewlines)
         
-        // Auto Shift 3: Capitalize proper nouns, brands, days, and tech terms
+        // 6. CAPITALIZATION & LOWERCASE ENFORCEMENT (Smart Auto-Shift):
+        // List of genuine Proper Nouns, Brands, Tech Terms, Days, Months, and Cities
         let properNouns = [
             "Google", "Apple", "Mac", "MacBook", "iPhone", "iPad", "Switch", "WhatsApp", "YouTube",
             "Instagram", "Telegram", "LinkedIn", "Twitter", "Slack", "Zoom", "Gmail", "GitHub",
@@ -1338,16 +1337,46 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
             "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December",
             "India", "Delhi", "Mumbai", "Bangalore", "Bengaluru", "Hyderabad", "Pune", "Kolkata", "Chennai", "Noida", "Gurgaon", "Jaipur", "Goa"
         ]
-        for noun in properNouns {
-            if let regex = try? NSRegularExpression(pattern: "(?i)\\b\(noun)\\b", options: []) {
-                result = regex.stringByReplacingMatches(in: result, options: [], range: NSRange(location: 0, length: result.utf16.count), withTemplate: noun)
+        let properNounSet = Set(properNouns.map { $0.lowercased() })
+        
+        // Step A: Lowercase all mid-sentence words that were erroneously capitalized by speech engines
+        var tokens = result.components(separatedBy: " ")
+        var sentenceStart = true
+        for idx in 0..<tokens.count {
+            let word = tokens[idx]
+            guard !word.isEmpty else { continue }
+            
+            let strippedWord = word.trimmingCharacters(in: CharacterSet.punctuationCharacters)
+            let lowerStripped = strippedWord.lowercased()
+            
+            if sentenceStart {
+                // Capitalize first letter of the sentence
+                if let f = word.first {
+                    tokens[idx] = String(f).uppercased() + word.dropFirst()
+                }
+                sentenceStart = false
+            } else {
+                // In the middle of a sentence:
+                if lowerStripped == "i" || lowerStripped == "i'm" || lowerStripped == "i'll" || lowerStripped == "i've" || lowerStripped == "i'd" {
+                    // English 'I' pronoun stays capitalized
+                    tokens[idx] = word.replacingOccurrences(of: strippedWord, with: strippedWord.capitalized)
+                } else if properNounSet.contains(lowerStripped) {
+                    // Proper noun stays capitalized as TitleCase
+                    if let original = properNouns.first(where: { $0.lowercased() == lowerStripped }) {
+                        tokens[idx] = word.replacingOccurrences(of: strippedWord, with: original)
+                    }
+                } else {
+                    // Ordinary common words must be lowercase!
+                    tokens[idx] = word.lowercased()
+                }
+            }
+            
+            // Check if this token ends a sentence
+            if word.hasSuffix(".") || word.hasSuffix("?") || word.hasSuffix("!") || word.contains("\n") {
+                sentenceStart = true
             }
         }
-        
-        // Ensure first character of entire transcription is capitalized
-        if let first = result.first, first.isLowercase {
-            result = result.prefix(1).uppercased() + result.dropFirst()
-        }
+        result = tokens.joined(separator: " ")
         
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -1513,7 +1542,7 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
 public enum DevanagariToRomanTransliterater {
     // High-frequency Hindi word dictionary for natural Roman spelling
     private static let wordMap: [String: String] = [
-        "मैं": "Main", "मै": "Main", "नहीं": "nahi", "नही": "nahi",
+        "मैं": "main", "मै": "main", "नहीं": "nahi", "नही": "nahi",
         "करूँगा": "karunga", "करूंगा": "karunga", "करूंगी": "karungi", "करूँगी": "karungi", "करेगा": "karega", "करेंगे": "karenge",
         "सीखूँगा": "seekhunga", "सीखूंगा": "seekhunga", "सीखेंगे": "seekhenge", "सीखा": "seekha", "सीखेगा": "seekhega",
         "कहूँगा": "kahunga", "कहुंगा": "kahunga", "कहा": "kaha", "कहेगा": "kahega", "कहेंगे": "kahenge",
