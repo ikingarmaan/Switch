@@ -55,7 +55,7 @@ public enum WallpaperSource: String, CaseIterable, Identifiable, Sendable {
     
     public var title: String {
         switch self {
-        case .allPictures: return "🖼️ All Pictures & Wallpapers (System + Finder)"
+        case .allPictures: return "🖼️ All Pictures & Wallpapers (System + ~/Pictures)"
         case .macDefault: return "🍏 Mac System Wallpapers"
         case .userWallpapers: return "📁 User Wallpapers (~/Pictures/Wallpapers)"
         case .customFolder: return "📂 Choose Custom Folder..."
@@ -399,18 +399,16 @@ public final class WallpaperChangerService: NSObject, ObservableObject, @uncheck
         ]
         
         let picturesDir = FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first?.path ?? "\(NSHomeDirectory())/Pictures"
-        let desktopDir = "\(NSHomeDirectory())/Desktop"
         
         switch source {
         case .allPictures:
-            // Combine all full 5K/6K macOS system wallpapers + 4K/8K user wallpapers & pictures!
+            // Combine all full 5K/6K macOS system wallpapers + 4K/8K user wallpapers & ~/Pictures!
             for sys in systemDirs {
                 scannedURLs.append(contentsOf: scanDirectory(at: sys, extensions: extensions, recursive: false))
             }
             ensureUserWallpapersDirectoryExists()
             scannedURLs.append(contentsOf: scanDirectory(at: userWallpapersPath, extensions: extensions, recursive: true))
             scannedURLs.append(contentsOf: scanDirectory(at: picturesDir, extensions: extensions, recursive: true))
-            scannedURLs.append(contentsOf: scanDirectory(at: desktopDir, extensions: extensions, recursive: true))
             if !customFolderPath.isEmpty {
                 scannedURLs.append(contentsOf: scanDirectory(at: customFolderPath, extensions: extensions, recursive: true))
             }
