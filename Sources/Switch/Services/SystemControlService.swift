@@ -71,7 +71,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .selfControl: return "Self Control & Recovery"
         case .locationServices: return "Location Services"
         case .ramGpuReset: return "RAM & GPU Reset"
-        case .cleanMacCache: return "Clean Mac Cache"
+        case .cleanMacCache: return "Mac Cleaner"
         case .wisprFlow: return "Wispr Flow (Voice to Text)"
         }
     }

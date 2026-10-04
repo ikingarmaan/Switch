@@ -2063,7 +2063,6 @@ public struct SwitchRowView: View {
                     }
                 } else if item.type == .cleanMacCache {
                     let cleaner = CleanCacheService.shared
-                    let diag = cleaner.diagnostics
                     
                     HStack(spacing: 5) {
                         Button(action: {
@@ -2085,146 +2084,12 @@ public struct SwitchRowView: View {
                                 )
                         }
                         .buttonStyle(.plain)
-                        .help("Clean Mac Cache & Free Space Now")
+                        .help("Clean Mac Cache Now")
                         .disabled(cleaner.isCleaning)
                         
-                        Menu {
-                            Button(action: {
-                                cleaner.cleanNow()
-                            }) {
-                                HStack {
-                                    Text("Clean All Caches Now ⚡️")
-                                    Image(systemName: "sparkles")
-                                }
-                            }
-                            .disabled(cleaner.isCleaning)
-                            
-                            Button(action: {
-                                cleaner.refreshDiagnostics()
-                            }) {
-                                HStack {
-                                    Text("Rescan Cache Sizes 🔄")
-                                    Image(systemName: "arrow.clockwise")
-                                }
-                            }
-                            
-                            Divider()
-                            
-                            Section("Clean Categories") {
-                                Button(action: {
-                                    cleaner.cleanUserCaches.toggle()
-                                }) {
-                                    HStack {
-                                        Text("User App Caches (\(ByteCountFormatter.string(fromByteCount: diag.userCachesBytes, countStyle: .file)))")
-                                        if cleaner.cleanUserCaches {
-                                            Image(systemName: "checkmark")
-                                        }
-                                    }
-                                }
-                                
-                                Button(action: {
-                                    cleaner.cleanDevCaches.toggle()
-                                }) {
-                                    HStack {
-                                        Text("Dev & Build Artifacts (Xcode/npm/pip) (\(ByteCountFormatter.string(fromByteCount: diag.devCachesBytes, countStyle: .file)))")
-                                        if cleaner.cleanDevCaches {
-                                            Image(systemName: "checkmark")
-                                        }
-                                    }
-                                }
-                                
-                                Button(action: {
-                                    cleaner.cleanLogs.toggle()
-                                }) {
-                                    HStack {
-                                        Text("System & Crash Logs (\(ByteCountFormatter.string(fromByteCount: diag.logsBytes, countStyle: .file)))")
-                                        if cleaner.cleanLogs {
-                                            Image(systemName: "checkmark")
-                                        }
-                                    }
-                                }
-                                
-                                Button(action: {
-                                    cleaner.cleanTemp.toggle()
-                                }) {
-                                    HStack {
-                                        Text("Temporary & QuickLook Files (\(ByteCountFormatter.string(fromByteCount: diag.tempBytes, countStyle: .file)))")
-                                        if cleaner.cleanTemp {
-                                            Image(systemName: "checkmark")
-                                        }
-                                    }
-                                }
-                                
-                                Button(action: {
-                                    cleaner.emptyTrash.toggle()
-                                }) {
-                                    HStack {
-                                        Text("Empty Trash (\(ByteCountFormatter.string(fromByteCount: diag.trashBytes, countStyle: .file)))")
-                                        if cleaner.emptyTrash {
-                                            Image(systemName: "checkmark")
-                                        }
-                                    }
-                                }
-                            }
-                            
-                            Divider()
-                            
-                            Section("Automation") {
-                                Button(action: {
-                                    cleaner.setAutoGuardEnabled(!cleaner.isAutoGuardEnabled)
-                                }) {
-                                    HStack {
-                                        Text("Auto-Clean Guard (When Caches > 5 GB)")
-                                        if cleaner.isAutoGuardEnabled {
-                                            Image(systemName: "checkmark")
-                                        }
-                                    }
-                                }
-                                
-                                Button(action: {
-                                    cleaner.soundFeedback.toggle()
-                                }) {
-                                    HStack {
-                                        Text("Play Sound on Clean")
-                                        if cleaner.soundFeedback {
-                                            Image(systemName: "checkmark")
-                                        }
-                                    }
-                                }
-                            }
-                            
-                            Divider()
-                            
-                            Section("Disk Diagnostics") {
-                                Button(action: {}) {
-                                    Text("Cleanable Junk: \(diag.formattedCleanable)")
-                                }
-                                .disabled(true)
-                                
-                                Button(action: {}) {
-                                    Text("Available Free: \(diag.formattedFreeDisk)")
-                                }
-                                .disabled(true)
-                                
-                                Button(action: {}) {
-                                    Text("Total Capacity: \(diag.formattedTotalDisk)")
-                                }
-                                .disabled(true)
-                            }
-                            
-                            Divider()
-                            
-                            Button(action: {
-                                if let url = URL(string: "x-apple.systempreferences:com.apple.settings.Storage") {
-                                    NSWorkspace.shared.open(url)
-                                }
-                            }) {
-                                HStack {
-                                    Text("Open macOS Storage Settings...")
-                                    Image(systemName: "internaldrive")
-                                }
-                            }
-                        } label: {
+                        Button(action: {
+                            MacCleanerWindowManager.shared.showWindow()
+                        }) {
                             HStack(spacing: 3) {
                                 Text(item.subtitle ?? cleaner.statusSubtitle)
                                     .font(.system(size: 12, weight: item.isOn ? .bold : .medium, design: .rounded))
@@ -2235,31 +2100,40 @@ public struct SwitchRowView: View {
                                                 ? Color(red: 0.35, green: 0.78, blue: 0.98)
                                                 : (item.isOn ? Color(red: 0.38, green: 0.85, blue: 0.55) : Color.gray.opacity(0.85)))
                                     )
-                                Image(systemName: "chevron.down")
-                                    .font(.system(size: 8))
+                                Image(systemName: "arrow.up.right.square")
+                                    .font(.system(size: 9))
                                     .foregroundColor(Color.gray.opacity(0.6))
                             }
                         }
-                        .menuStyle(.borderlessButton)
-                        .fixedSize()
+                        .buttonStyle(.plain)
+                        .help("Open Mac Cleaner & App Uninstaller Window")
                     }
                     .contextMenu {
                         Button(action: {
-                            cleaner.cleanNow()
+                            MacCleanerWindowManager.shared.showWindow()
                         }) {
                             HStack {
-                                Text("Clean All Caches Now ⚡️")
-                                Image(systemName: "sparkles")
+                                Text("Open Mac Cleaner & App Uninstaller...")
+                                Image(systemName: "arrow.up.forward.app")
                             }
                         }
                         
                         Divider()
                         
                         Button(action: {
+                            cleaner.cleanNow()
+                        }) {
+                            HStack {
+                                Text("Clean All Junk Now ⚡️")
+                                Image(systemName: "sparkles")
+                            }
+                        }
+                        
+                        Button(action: {
                             cleaner.setAutoGuardEnabled(!cleaner.isAutoGuardEnabled)
                         }) {
                             HStack {
-                                Text("Auto-Clean Guard")
+                                Text("Auto-Clean Guard (When > 5 GB)")
                                 if cleaner.isAutoGuardEnabled {
                                     Image(systemName: "checkmark")
                                 }
