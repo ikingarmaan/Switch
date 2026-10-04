@@ -158,7 +158,7 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
         }
     }
     
-    @Published public var autoPressReturn: Bool = true {
+    @Published public var autoPressReturn: Bool = false {
         didSet {
             UserDefaults.standard.set(autoPressReturn, forKey: keyAutoPressReturn)
         }
@@ -263,7 +263,7 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
         if defaults.object(forKey: keyAutoPressReturn) != nil {
             self.autoPressReturn = defaults.bool(forKey: keyAutoPressReturn)
         } else {
-            self.autoPressReturn = true
+            self.autoPressReturn = false
         }
         
         if defaults.object(forKey: keyRemoveFillers) != nil {
