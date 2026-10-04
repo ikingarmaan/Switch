@@ -2332,6 +2332,21 @@ public struct SwitchRowView: View {
                     let dd = DockDoorService.shared
                     HStack(spacing: 4) {
                         Menu {
+                            Section("Window Switcher Shortcut") {
+                                ForEach(DockDoorSwitcherShortcut.allCases) { shortcut in
+                                    Button(action: {
+                                        dd.setSwitcherShortcut(shortcut)
+                                    }) {
+                                        HStack {
+                                            Text(shortcut.label)
+                                            if dd.switcherShortcut == shortcut {
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
                             Section("Hover Trigger Delay") {
                                 ForEach(DockDoorHoverDelay.allCases) { delay in
                                     Button(action: {
@@ -2389,7 +2404,7 @@ public struct SwitchRowView: View {
                                     dd.setSoundFeedback(!dd.soundFeedback)
                                 }) {
                                     HStack {
-                                        Text("Hover Sound Feedback")
+                                        Text("Sound Feedback (Chimes)")
                                         if dd.soundFeedback {
                                             Image(systemName: "checkmark")
                                         }
@@ -2398,6 +2413,15 @@ public struct SwitchRowView: View {
                             }
                             
                             Divider()
+                            
+                            Button(action: {
+                                dd.triggerSwitcherHUD(modifier: .command)
+                            }) {
+                                HStack {
+                                    Text("Test ⌘⇥ Window Switcher HUD Now")
+                                    Image(systemName: "macwindow.on.rectangle")
+                                }
+                            }
                             
                             Button(action: {
                                 dd.checkAccessibilityPermission(prompt: true)
@@ -2409,7 +2433,7 @@ public struct SwitchRowView: View {
                             }
                         } label: {
                             HStack(spacing: 3) {
-                                Text(item.subtitle ?? (item.isOn ? dd.hoverDelay.label : "Hover Previews"))
+                                Text(item.subtitle ?? (item.isOn ? "⌘⇥ · \(dd.cardSize.label.components(separatedBy: " ").first ?? "Medium")" : "⌘⇥ Switcher"))
                                     .font(.system(size: 12, weight: item.isOn ? .bold : .medium, design: .rounded))
                                     .foregroundColor(item.isOn ? Color(red: 0.35, green: 0.75, blue: 0.98) : Color.gray.opacity(0.85))
                                 Image(systemName: "chevron.down")
@@ -2422,11 +2446,22 @@ public struct SwitchRowView: View {
                     }
                     .contextMenu {
                         Button(action: {
+                            dd.triggerSwitcherHUD(modifier: .command)
+                        }) {
+                            HStack {
+                                Text("Open ⌘⇥ Window Switcher HUD")
+                                Image(systemName: "macwindow.on.rectangle")
+                            }
+                        }
+                        
+                        Divider()
+                        
+                        Button(action: {
                             dd.setEnabled(!dd.isEnabled)
                         }) {
                             HStack {
                                 Text(dd.isEnabled ? "Disable DockDoor" : "Enable DockDoor")
-                                Image(systemName: "macwindow.on.rectangle")
+                                Image(systemName: "power")
                             }
                         }
                         

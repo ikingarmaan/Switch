@@ -56,6 +56,24 @@ public enum DockDoorHoverDelay: Double, CaseIterable, Identifiable, Codable, Sen
     }
 }
 
+public enum DockDoorSwitcherShortcut: String, CaseIterable, Identifiable, Codable, Sendable {
+    case commandTab = "commandTab"
+    case optionTab = "optionTab"
+    case both = "both"
+    case disabled = "disabled"
+    
+    public var id: String { rawValue }
+    
+    public var label: String {
+        switch self {
+        case .commandTab: return "Command + Tab (⌘⇥)"
+        case .optionTab: return "Option + Tab (⌥⇥)"
+        case .both: return "Both (⌘⇥ & ⌥⇥)"
+        case .disabled: return "Disabled"
+        }
+    }
+}
+
 public struct DockDoorWindowInfo: Identifiable, Sendable {
     public let id: CGWindowID
     public let title: String
@@ -97,6 +115,7 @@ public final class DockDoorService: NSObject, ObservableObject, @unchecked Senda
     private let keyShowMinimized = "switch.dockDoor.showMinimized"
     private let keyShowActionButtons = "switch.dockDoor.showActionButtons"
     private let keySoundFeedback = "switch.dockDoor.soundFeedback"
+    private let keySwitcherShortcut = "switch.dockDoor.switcherShortcut"
     
     @Published public private(set) var isEnabled: Bool = false
     @Published public var hoverDelay: DockDoorHoverDelay = .fast {
@@ -124,23 +143,44 @@ public final class DockDoorService: NSObject, ObservableObject, @unchecked Senda
             UserDefaults.standard.set(soundFeedback, forKey: keySoundFeedback)
         }
     }
+    @Published public var switcherShortcut: DockDoorSwitcherShortcut = .both {
+        didSet {
+            UserDefaults.standard.set(switcherShortcut.rawValue, forKey: keySwitcherShortcut)
+        }
+    }
     
+    // Hover Preview State
     @Published public private(set) var currentHoveredApp: String?
     @Published public private(set) var currentHoveredIcon: NSImage?
     @Published public private(set) var currentWindows: [DockDoorWindowInfo] = []
     
-    // Floating Popover Panel
+    // Command+Tab / Alt+Tab Switcher HUD State
+    @Published public private(set) var isSwitcherActive: Bool = false
+    @Published public private(set) var switcherWindows: [DockDoorWindowInfo] = []
+    @Published public private(set) var switcherSelectedIndex: Int = 0
+    
+    public var selectedSwitcherWindow: DockDoorWindowInfo? {
+        guard switcherSelectedIndex >= 0 && switcherSelectedIndex < switcherWindows.count else { return nil }
+        return switcherWindows[switcherSelectedIndex]
+    }
+    
+    // Floating Panels
     private var previewPanel: NSPanel?
+    private var switcherPanel: NSPanel?
     private var mouseMonitor: Any?
+    private var eventTap: CFMachPort?
+    private var runLoopSource: CFRunLoopSource?
     private var hoverTimer: Timer?
     private var hideTimer: Timer?
     private var lastHoveredPID: pid_t?
     private var lastHoveredDockRect: CGRect = .zero
     private var isMouseInsidePreview: Bool = false
+    private var activeModifierForSwitcher: NSEvent.ModifierFlags?
     
     public var statusSubtitle: String? {
         if isEnabled {
-            return "\(cardSize.label.components(separatedBy: " ").first ?? "Medium") · \(hoverDelay.label.components(separatedBy: " ").first ?? "Fast")"
+            let shortcutLabel = switcherShortcut == .both ? "⌘⇥ & ⌥⇥" : (switcherShortcut == .commandTab ? "⌘⇥" : (switcherShortcut == .optionTab ? "⌥⇥" : "Dock"))
+            return "\(shortcutLabel) · \(cardSize.label.components(separatedBy: " ").first ?? "Medium")"
         }
         return nil
     }
@@ -150,6 +190,7 @@ public final class DockDoorService: NSObject, ObservableObject, @unchecked Senda
         loadSettings()
         if isEnabled {
             startMouseTracking()
+            startKeyboardEventTap()
         }
     }
     
@@ -188,6 +229,13 @@ public final class DockDoorService: NSObject, ObservableObject, @unchecked Senda
         } else {
             self.soundFeedback = true
         }
+        
+        if let savedShortcut = defaults.string(forKey: keySwitcherShortcut),
+           let shortcut = DockDoorSwitcherShortcut(rawValue: savedShortcut) {
+            self.switcherShortcut = shortcut
+        } else {
+            self.switcherShortcut = .both
+        }
     }
     
     // MARK: - Master Toggle
@@ -203,10 +251,13 @@ public final class DockDoorService: NSObject, ObservableObject, @unchecked Senda
         
         if enabled {
             startMouseTracking()
+            startKeyboardEventTap()
             playChime(name: "Blow")
         } else {
             stopMouseTracking()
+            stopKeyboardEventTap()
             hidePreview(immediate: true)
+            cancelSwitcher()
         }
         
         NotificationCenter.default.post(name: .dockDoorStateDidChange, object: enabled)
@@ -237,6 +288,11 @@ public final class DockDoorService: NSObject, ObservableObject, @unchecked Senda
         NotificationCenter.default.post(name: .dockDoorStateDidChange, object: isEnabled)
     }
     
+    public func setSwitcherShortcut(_ shortcut: DockDoorSwitcherShortcut) {
+        self.switcherShortcut = shortcut
+        NotificationCenter.default.post(name: .dockDoorStateDidChange, object: isEnabled)
+    }
+    
     @discardableResult
     public func checkAccessibilityPermission(prompt: Bool = true) -> Bool {
         let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: prompt]
@@ -249,7 +305,7 @@ public final class DockDoorService: NSObject, ObservableObject, @unchecked Senda
         stopMouseTracking()
         
         // Global monitor for mouse movement
-        mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved]) { [weak self] event in
+        mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved]) { [weak self] _ in
             self?.handleGlobalMouseMove()
         }
     }
@@ -266,7 +322,7 @@ public final class DockDoorService: NSObject, ObservableObject, @unchecked Senda
     }
     
     public func handleGlobalMouseMove() {
-        guard isEnabled else { return }
+        guard isEnabled, !isSwitcherActive else { return }
         let mouseLocation = NSEvent.mouseLocation
         
         // 1. If mouse is hovering over the currently visible preview window, keep it open!
@@ -338,7 +394,7 @@ public final class DockDoorService: NSObject, ObservableObject, @unchecked Senda
             return nil
         }
         
-        // Check element role / title
+        // Check element title
         var titleRef: CFTypeRef?
         AXUIElementCopyAttributeValue(element, kAXTitleAttribute as CFString, &titleRef)
         let title = titleRef as? String ?? ""
@@ -446,6 +502,62 @@ public final class DockDoorService: NSObject, ObservableObject, @unchecked Senda
         return results
     }
     
+    public func fetchAllOpenWindows() -> [DockDoorWindowInfo] {
+        guard let windowList = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
+            return []
+        }
+        
+        let runningApps = NSWorkspace.shared.runningApplications
+        var appMap: [pid_t: NSRunningApplication] = [:]
+        for app in runningApps where app.activationPolicy == .regular {
+            appMap[app.processIdentifier] = app
+        }
+        
+        var results: [DockDoorWindowInfo] = []
+        
+        for w in windowList {
+            guard let pid = w[kCGWindowOwnerPID as String] as? Int32, let app = appMap[pid] else { continue }
+            guard let layer = w[kCGWindowLayer as String] as? Int, layer == 0 else { continue }
+            guard let boundsDict = w[kCGWindowBounds as String] as? [String: Any],
+                  let bounds = CGRect(dictionaryRepresentation: boundsDict as CFDictionary) else { continue }
+            guard bounds.width > 80 && bounds.height > 80 else { continue }
+            
+            let windowID = CGWindowID(w[kCGWindowNumber as String] as? Int ?? 0)
+            let title = w[kCGWindowName as String] as? String ?? ""
+            let appName = app.localizedName ?? "Application"
+            let appIcon = app.icon
+            let isMinimized = (w[kCGWindowIsOnscreen as String] as? Bool) == false
+            
+            if !showMinimized && isMinimized {
+                continue
+            }
+            
+            var thumbnail: NSImage? = nil
+            if let cgImage = CGWindowListCreateImage(
+                .null,
+                .optionIncludingWindow,
+                windowID,
+                [.boundsIgnoreFraming, .bestResolution]
+            ) {
+                thumbnail = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+            }
+            
+            let item = DockDoorWindowInfo(
+                id: windowID,
+                title: title.isEmpty ? appName : title,
+                pid: pid,
+                appName: appName,
+                appIcon: appIcon,
+                bounds: bounds,
+                isMinimized: isMinimized,
+                thumbnail: thumbnail
+            )
+            results.append(item)
+        }
+        
+        return results
+    }
+    
     private func displayPreviewPanel(dockRect: CGRect, windowCount: Int) {
         let cardW = cardSize.width
         let cardH = cardSize.height
@@ -518,36 +630,351 @@ public final class DockDoorService: NSObject, ObservableObject, @unchecked Senda
         
         if immediate {
             panel.orderOut(nil)
-            currentWindows = []
         } else {
             NSAnimationContext.runAnimationGroup({ ctx in
-                ctx.duration = 0.15
+                ctx.duration = 0.14
                 panel.animator().alphaValue = 0.0
-            }, completionHandler: { [weak self] in
-                panel.orderOut(nil)
-                self?.currentWindows = []
+            }, completionHandler: {
+                if panel.alphaValue == 0.0 {
+                    panel.orderOut(nil)
+                }
             })
         }
     }
     
-    // MARK: - Window Management Actions (Focus, Close, Minimize, Zoom, New)
+    // MARK: - Command+Tab / Alt+Tab Switcher HUD Logic
+    
+    public func triggerSwitcherHUD(modifier: NSEvent.ModifierFlags) {
+        let windows = fetchAllOpenWindows()
+        guard !windows.isEmpty else { return }
+        
+        self.activeModifierForSwitcher = modifier
+        self.switcherWindows = windows
+        // By default, select the 2nd window (index 1) just like macOS Cmd+Tab, or 0 if only 1 window
+        self.switcherSelectedIndex = windows.count > 1 ? 1 : 0
+        self.isSwitcherActive = true
+        
+        if soundFeedback && AppSettings.shared.playSound {
+            NSSound(named: "Pop")?.play()
+        }
+        
+        showSwitcherPanel()
+    }
+    
+    private func showSwitcherPanel() {
+        hidePreview(immediate: true)
+        
+        if switcherPanel == nil {
+            let panel = NSPanel(
+                contentRect: NSRect(x: 0, y: 0, width: 720, height: 320),
+                styleMask: [.borderless, .nonactivatingPanel],
+                backing: .buffered,
+                defer: false
+            )
+            panel.level = .screenSaver
+            panel.isOpaque = false
+            panel.backgroundColor = .clear
+            panel.hasShadow = true
+            panel.isMovableByWindowBackground = false
+            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            
+            let hosting = NSHostingView(rootView: DockDoorSwitcherHUDView())
+            panel.contentView = hosting
+            self.switcherPanel = panel
+        }
+        
+        guard let panel = switcherPanel, let screen = NSScreen.main else { return }
+        
+        // Center on the active screen
+        let screenFrame = screen.frame
+        let panelW: CGFloat = min(screenFrame.width * 0.85, CGFloat(max(1, switcherWindows.count)) * 288 + 60)
+        let panelH: CGFloat = 330
+        
+        panel.setContentSize(NSSize(width: panelW, height: panelH))
+        let originX = screenFrame.midX - (panelW / 2)
+        let originY = screenFrame.midY - (panelH / 2)
+        panel.setFrameOrigin(NSPoint(x: originX, y: originY))
+        
+        panel.alphaValue = 0.0
+        panel.orderFrontRegardless()
+        
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.12
+            panel.animator().alphaValue = 1.0
+        }
+    }
+    
+    public func selectNextWindow() {
+        guard !switcherWindows.isEmpty else { return }
+        switcherSelectedIndex = (switcherSelectedIndex + 1) % switcherWindows.count
+        if soundFeedback && AppSettings.shared.playSound {
+            NSSound(named: "Tink")?.play()
+        }
+    }
+    
+    public func selectPreviousWindow() {
+        guard !switcherWindows.isEmpty else { return }
+        switcherSelectedIndex = (switcherSelectedIndex - 1 + switcherWindows.count) % switcherWindows.count
+        if soundFeedback && AppSettings.shared.playSound {
+            NSSound(named: "Tink")?.play()
+        }
+    }
+    
+    public func selectWindow(at index: Int) {
+        guard index >= 0 && index < switcherWindows.count else { return }
+        switcherSelectedIndex = index
+    }
+    
+    public func commitSwitcherSelection() {
+        guard isSwitcherActive else { return }
+        isSwitcherActive = false
+        activeModifierForSwitcher = nil
+        
+        if let selected = selectedSwitcherWindow {
+            focusWindow(selected)
+        }
+        
+        hideSwitcherPanel()
+    }
+    
+    public func cancelSwitcher() {
+        isSwitcherActive = false
+        activeModifierForSwitcher = nil
+        hideSwitcherPanel()
+    }
+    
+    public func closeSelectedWindow() {
+        guard let selected = selectedSwitcherWindow else { return }
+        closeWindow(selected)
+        
+        // Remove from list
+        switcherWindows.removeAll(where: { $0.id == selected.id })
+        if switcherWindows.isEmpty {
+            cancelSwitcher()
+        } else {
+            switcherSelectedIndex = min(switcherSelectedIndex, switcherWindows.count - 1)
+        }
+    }
+    
+    public func minimizeSelectedWindow() {
+        guard let selected = selectedSwitcherWindow else { return }
+        minimizeWindow(selected)
+    }
+    
+    public func quitSelectedApp() {
+        guard let selected = selectedSwitcherWindow else { return }
+        if let app = NSRunningApplication(processIdentifier: selected.pid) {
+            app.terminate()
+        }
+        switcherWindows.removeAll(where: { $0.pid == selected.pid })
+        if switcherWindows.isEmpty {
+            cancelSwitcher()
+        } else {
+            switcherSelectedIndex = min(switcherSelectedIndex, switcherWindows.count - 1)
+        }
+    }
+    
+    public func hideSelectedApp() {
+        guard let selected = selectedSwitcherWindow else { return }
+        if let app = NSRunningApplication(processIdentifier: selected.pid) {
+            app.hide()
+        }
+        switcherWindows.removeAll(where: { $0.pid == selected.pid })
+        if switcherWindows.isEmpty {
+            cancelSwitcher()
+        } else {
+            switcherSelectedIndex = min(switcherSelectedIndex, switcherWindows.count - 1)
+        }
+    }
+    
+    private func hideSwitcherPanel() {
+        guard let panel = switcherPanel, panel.isVisible else { return }
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.12
+            panel.animator().alphaValue = 0.0
+        }, completionHandler: {
+            panel.orderOut(nil)
+        })
+    }
+    
+    // MARK: - Global Keyboard Event Tap
+    
+    private func startKeyboardEventTap() {
+        stopKeyboardEventTap()
+        
+        let mask = (1 << CGEventType.keyDown.rawValue) |
+                   (1 << CGEventType.flagsChanged.rawValue)
+        
+        let observer = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
+        
+        guard let tap = CGEvent.tapCreate(
+            tap: .cgSessionEventTap,
+            place: .headInsertEventTap,
+            options: .defaultTap,
+            eventsOfInterest: CGEventMask(mask),
+            callback: { (proxy, type, event, refcon) -> Unmanaged<CGEvent>? in
+                guard let refcon = refcon else {
+                    return Unmanaged.passRetained(event)
+                }
+                let service = Unmanaged<DockDoorService>.fromOpaque(refcon).takeUnretainedValue()
+                return service.handleEventTap(proxy: proxy, type: type, event: event)
+            },
+            userInfo: observer
+        ) else {
+            return
+        }
+        
+        self.eventTap = tap
+        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+        self.runLoopSource = source
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        CGEvent.tapEnable(tap: tap, enable: true)
+    }
+    
+    private func stopKeyboardEventTap() {
+        if let tap = eventTap {
+            CGEvent.tapEnable(tap: tap, enable: false)
+            CFMachPortInvalidate(tap)
+            self.eventTap = nil
+        }
+        if let source = runLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
+            self.runLoopSource = nil
+        }
+    }
+    
+    private func handleEventTap(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+        let flags = event.flags
+        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+        
+        // 1. Handle Key Down
+        if type == .keyDown {
+            let isTab = (keyCode == 48)
+            let isCmd = flags.contains(.maskCommand)
+            let isAlt = flags.contains(.maskAlternate)
+            let isShift = flags.contains(.maskShift)
+            
+            // Check if switcher is already open
+            if isSwitcherActive {
+                if isTab {
+                    DispatchQueue.main.async {
+                        if isShift {
+                            self.selectPreviousWindow()
+                        } else {
+                            self.selectNextWindow()
+                        }
+                    }
+                    return nil // Intercept Tab key
+                }
+                
+                // Navigation Arrow Keys
+                if keyCode == 124 || keyCode == 125 { // Right / Down
+                    DispatchQueue.main.async { self.selectNextWindow() }
+                    return nil
+                }
+                if keyCode == 123 || keyCode == 126 { // Left / Up
+                    DispatchQueue.main.async { self.selectPreviousWindow() }
+                    return nil
+                }
+                
+                // Return (36) or Space (49) -> Commit Selection
+                if keyCode == 36 || keyCode == 49 {
+                    DispatchQueue.main.async { self.commitSwitcherSelection() }
+                    return nil
+                }
+                
+                // Escape (53) -> Cancel
+                if keyCode == 53 {
+                    DispatchQueue.main.async { self.cancelSwitcher() }
+                    return nil
+                }
+                
+                // W (13) or Delete (51) -> Close Window
+                if keyCode == 13 || keyCode == 51 {
+                    DispatchQueue.main.async { self.closeSelectedWindow() }
+                    return nil
+                }
+                
+                // M (46) -> Minimize Window
+                if keyCode == 46 {
+                    DispatchQueue.main.async { self.minimizeSelectedWindow() }
+                    return nil
+                }
+                
+                // Q (12) -> Quit App
+                if keyCode == 12 {
+                    DispatchQueue.main.async { self.quitSelectedApp() }
+                    return nil
+                }
+                
+                // H (4) -> Hide App
+                if keyCode == 4 {
+                    DispatchQueue.main.async { self.hideSelectedApp() }
+                    return nil
+                }
+            } else {
+                // Switcher not active -> Check trigger shortcuts
+                if isTab {
+                    let cmdAllowed = (switcherShortcut == .commandTab || switcherShortcut == .both)
+                    let altAllowed = (switcherShortcut == .optionTab || switcherShortcut == .both)
+                    
+                    if isCmd && cmdAllowed {
+                        DispatchQueue.main.async {
+                            self.triggerSwitcherHUD(modifier: .command)
+                        }
+                        return nil // Intercept Cmd+Tab to show DockDoor switcher
+                    } else if isAlt && altAllowed {
+                        DispatchQueue.main.async {
+                            self.triggerSwitcherHUD(modifier: .option)
+                        }
+                        return nil // Intercept Option+Tab to show DockDoor switcher
+                    }
+                }
+            }
+        }
+        
+        // 2. Handle Modifier Flags Changed (Detect key release to switch)
+        if type == .flagsChanged && isSwitcherActive {
+            if let mod = activeModifierForSwitcher {
+                if mod == .command && !flags.contains(.maskCommand) {
+                    DispatchQueue.main.async {
+                        self.commitSwitcherSelection()
+                    }
+                } else if mod == .option && !flags.contains(.maskAlternate) {
+                    DispatchQueue.main.async {
+                        self.commitSwitcherSelection()
+                    }
+                }
+            }
+        }
+        
+        return Unmanaged.passRetained(event)
+    }
+    
+    // MARK: - Window Management Actions
     
     public func focusWindow(_ window: DockDoorWindowInfo) {
         hidePreview(immediate: true)
         
+        // 1. Activate application
         if let app = NSRunningApplication(processIdentifier: window.pid) {
             app.activate(options: [.activateIgnoringOtherApps])
         }
         
-        // Use Accessibility API to raise specific window
-        let appRef = AXUIElementCreateApplication(window.pid)
+        // 2. Unminimize and bring window to front via AXUIElement
+        let appElement = AXUIElementCreateApplication(window.pid)
         var windowsRef: CFTypeRef?
-        if AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &windowsRef) == .success,
-           let list = windowsRef as? [AXUIElement] {
-            for axWin in list {
+        if AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef) == .success,
+           let winArray = windowsRef as? [AXUIElement] {
+            for axWin in winArray {
                 var titleRef: CFTypeRef?
-                if AXUIElementCopyAttributeValue(axWin, kAXTitleAttribute as CFString, &titleRef) == .success,
-                   let t = titleRef as? String, t == window.title {
+                AXUIElementCopyAttributeValue(axWin, kAXTitleAttribute as CFString, &titleRef)
+                let t = titleRef as? String ?? ""
+                
+                if t == window.title || winArray.count == 1 {
+                    // Unminimize if needed
+                    AXUIElementSetAttributeValue(axWin, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
+                    // Raise to front
                     AXUIElementPerformAction(axWin, kAXRaiseAction as CFString)
                     break
                 }
@@ -556,68 +983,65 @@ public final class DockDoorService: NSObject, ObservableObject, @unchecked Senda
     }
     
     public func closeWindow(_ window: DockDoorWindowInfo) {
-        let appRef = AXUIElementCreateApplication(window.pid)
+        let appElement = AXUIElementCreateApplication(window.pid)
         var windowsRef: CFTypeRef?
-        if AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &windowsRef) == .success,
-           let list = windowsRef as? [AXUIElement] {
-            for axWin in list {
+        if AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef) == .success,
+           let winArray = windowsRef as? [AXUIElement] {
+            for axWin in winArray {
                 var titleRef: CFTypeRef?
-                if AXUIElementCopyAttributeValue(axWin, kAXTitleAttribute as CFString, &titleRef) == .success,
-                   let t = titleRef as? String, t == window.title {
-                    var closeBtnRef: CFTypeRef?
-                    if AXUIElementCopyAttributeValue(axWin, kAXCloseButtonAttribute as CFString, &closeBtnRef) == .success,
-                       let btn = closeBtnRef {
-                        AXUIElementPerformAction(btn as! AXUIElement, kAXPressAction as CFString)
+                AXUIElementCopyAttributeValue(axWin, kAXTitleAttribute as CFString, &titleRef)
+                let t = titleRef as? String ?? ""
+                
+                if t == window.title || winArray.count == 1 {
+                    var closeButtonRef: CFTypeRef?
+                    if AXUIElementCopyAttributeValue(axWin, kAXCloseButtonAttribute as CFString, &closeButtonRef) == .success,
+                       let closeBtn = closeButtonRef {
+                        AXUIElementPerformAction(closeBtn as! AXUIElement, kAXPressAction as CFString)
                     }
                     break
                 }
             }
         }
         
-        // Remove from current preview cards list immediately
-        withAnimation {
-            currentWindows.removeAll(where: { $0.id == window.id })
-            if currentWindows.isEmpty {
-                hidePreview(immediate: true)
-            }
+        currentWindows.removeAll(where: { $0.id == window.id })
+        if currentWindows.isEmpty {
+            hidePreview(immediate: true)
         }
     }
     
     public func minimizeWindow(_ window: DockDoorWindowInfo) {
-        let appRef = AXUIElementCreateApplication(window.pid)
+        let appElement = AXUIElementCreateApplication(window.pid)
         var windowsRef: CFTypeRef?
-        if AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &windowsRef) == .success,
-           let list = windowsRef as? [AXUIElement] {
-            for axWin in list {
+        if AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef) == .success,
+           let winArray = windowsRef as? [AXUIElement] {
+            for axWin in winArray {
                 var titleRef: CFTypeRef?
-                if AXUIElementCopyAttributeValue(axWin, kAXTitleAttribute as CFString, &titleRef) == .success,
-                   let t = titleRef as? String, t == window.title {
+                AXUIElementCopyAttributeValue(axWin, kAXTitleAttribute as CFString, &titleRef)
+                let t = titleRef as? String ?? ""
+                
+                if t == window.title || winArray.count == 1 {
                     AXUIElementSetAttributeValue(axWin, kAXMinimizedAttribute as CFString, kCFBooleanTrue)
                     break
                 }
             }
         }
-        
-        // Refresh preview thumbnails
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            guard let self = self, let pid = self.lastHoveredPID else { return }
-            self.currentWindows = self.fetchWindows(for: pid, appName: window.appName, appIcon: window.appIcon)
-        }
     }
     
     public func zoomWindow(_ window: DockDoorWindowInfo) {
-        let appRef = AXUIElementCreateApplication(window.pid)
+        let appElement = AXUIElementCreateApplication(window.pid)
         var windowsRef: CFTypeRef?
-        if AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &windowsRef) == .success,
-           let list = windowsRef as? [AXUIElement] {
-            for axWin in list {
+        if AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef) == .success,
+           let winArray = windowsRef as? [AXUIElement] {
+            for axWin in winArray {
                 var titleRef: CFTypeRef?
-                if AXUIElementCopyAttributeValue(axWin, kAXTitleAttribute as CFString, &titleRef) == .success,
-                   let t = titleRef as? String, t == window.title {
-                    var zoomBtnRef: CFTypeRef?
-                    if AXUIElementCopyAttributeValue(axWin, kAXZoomButtonAttribute as CFString, &zoomBtnRef) == .success,
-                       let btn = zoomBtnRef {
-                        AXUIElementPerformAction(btn as! AXUIElement, kAXPressAction as CFString)
+                AXUIElementCopyAttributeValue(axWin, kAXTitleAttribute as CFString, &titleRef)
+                let t = titleRef as? String ?? ""
+                
+                if t == window.title || winArray.count == 1 {
+                    var zoomButtonRef: CFTypeRef?
+                    if AXUIElementCopyAttributeValue(axWin, kAXZoomButtonAttribute as CFString, &zoomButtonRef) == .success,
+                       let zoomBtn = zoomButtonRef {
+                        AXUIElementPerformAction(zoomBtn as! AXUIElement, kAXPressAction as CFString)
                     }
                     break
                 }
@@ -626,25 +1050,23 @@ public final class DockDoorService: NSObject, ObservableObject, @unchecked Senda
     }
     
     public func openNewWindow(for window: DockDoorWindowInfo) {
-        hidePreview(immediate: true)
         if let app = NSRunningApplication(processIdentifier: window.pid) {
             app.activate(options: [.activateIgnoringOtherApps])
-            // Emulate ⌘N
+            
+            // Dispatch ⌘N key event to the application
             let src = CGEventSource(stateID: .hidSystemState)
-            let nKey: CGKeyCode = 45 // 'n' key
-            if let down = CGEvent(keyboardEventSource: src, virtualKey: nKey, keyDown: true),
-               let up = CGEvent(keyboardEventSource: src, virtualKey: nKey, keyDown: false) {
-                down.flags = .maskCommand
-                up.flags = []
-                down.post(tap: .cghidEventTap)
-                up.post(tap: .cghidEventTap)
-            }
+            let keyDown = CGEvent(keyboardEventSource: src, virtualKey: 45, keyDown: true) // N key = 45
+            keyDown?.flags = .maskCommand
+            let keyUp = CGEvent(keyboardEventSource: src, virtualKey: 45, keyDown: false)
+            keyUp?.flags = .maskCommand
+            
+            keyDown?.postToPid(window.pid)
+            keyUp?.postToPid(window.pid)
         }
     }
     
     private func playChime(name: String) {
-        if soundFeedback && AppSettings.shared.playSound {
-            NSSound(named: name)?.play()
-        }
+        guard soundFeedback && AppSettings.shared.playSound else { return }
+        NSSound(named: name)?.play()
     }
 }
