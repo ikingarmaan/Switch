@@ -2124,6 +2124,17 @@ public struct SwitchRowView: View {
                                 }
                                 
                                 Button(action: {
+                                    wf.autoPressReturn.toggle()
+                                }) {
+                                    HStack {
+                                        Text("Auto-Press Return (Enter) after Paste")
+                                        if wf.autoPressReturn {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                                
+                                Button(action: {
                                     wf.removeFillerWords.toggle()
                                 }) {
                                     HStack {
@@ -2150,7 +2161,7 @@ public struct SwitchRowView: View {
                                 wf.toggleDictation()
                             }) {
                                 HStack {
-                                    Text(wf.isListening ? "Stop Dictation" : "Start Dictating (⌥ Space / F8)")
+                                    Text(wf.isListening ? "Stop Dictation" : "Start Dictating (F8)")
                                     Image(systemName: "waveform.and.mic")
                                 }
                             }
@@ -2178,7 +2189,7 @@ public struct SwitchRowView: View {
                             wf.toggleDictation()
                         }) {
                             HStack {
-                                Text(wf.isListening ? "Stop Dictating" : "Start Dictating (⌥ Space / F8)")
+                                Text(wf.isListening ? "Stop Dictating" : "Start Dictating (F8)")
                                 Image(systemName: "waveform.and.mic")
                             }
                         }

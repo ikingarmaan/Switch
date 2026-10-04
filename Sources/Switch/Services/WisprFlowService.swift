@@ -52,7 +52,7 @@ public enum WisprLanguage: String, CaseIterable, Identifiable, Codable, Sendable
         switch self {
         case .hinglish: return "🇮🇳 Hinglish (Hindi + English Romanized)"
         case .english: return "🇬🇧 English (Global / US / UK)"
-        case .hindi: return "🕉️ Pure Hindi (Devanagari)"
+        case .hindi: return "🇮🇳 Pure Hindi (Devanagari)"
         case .auto: return "🌐 Auto-Detect Language"
         }
     }
@@ -122,6 +122,7 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
     private let keyEngine = "switch.wisprFlow.engine"
     private let keyLanguage = "switch.wisprFlow.language"
     private let keyAutoPaste = "switch.wisprFlow.autoPaste"
+    private let keyAutoPressReturn = "switch.wisprFlow.autoPressReturn"
     private let keyRemoveFillers = "switch.wisprFlow.removeFillers"
     private let keyAutoFormat = "switch.wisprFlow.autoFormat"
     private let keySoundFeedback = "switch.wisprFlow.soundFeedback"
@@ -154,6 +155,12 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
     @Published public var autoPaste: Bool = true {
         didSet {
             UserDefaults.standard.set(autoPaste, forKey: keyAutoPaste)
+        }
+    }
+    
+    @Published public var autoPressReturn: Bool = true {
+        didSet {
+            UserDefaults.standard.set(autoPressReturn, forKey: keyAutoPressReturn)
         }
     }
     
@@ -253,6 +260,12 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
             self.autoPaste = true
         }
         
+        if defaults.object(forKey: keyAutoPressReturn) != nil {
+            self.autoPressReturn = defaults.bool(forKey: keyAutoPressReturn)
+        } else {
+            self.autoPressReturn = true
+        }
+        
         if defaults.object(forKey: keyRemoveFillers) != nil {
             self.removeFillerWords = defaults.bool(forKey: keyRemoveFillers)
         } else {
@@ -333,43 +346,132 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
         NotificationCenter.default.post(name: .wisprFlowStateDidChange, object: enabled)
     }
     
-    // MARK: - Global Shortcut Listeners (⌥ Space & F8)
+    // MARK: - Global Shortcut Listeners (F8 without Fn, and ⌥ Space)
+    
+    private var eventTap: CFMachPort?
+    private var runLoopSource: CFRunLoopSource?
     
     private func setupGlobalShortcutListeners() {
-        // Global monitor for when Switch is in background
-        globalEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
-            self?.handleKeyEvent(event)
+        // 1. Global monitor for standard keys and systemDefined media keys
+        globalEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .systemDefined]) { [weak self] event in
+            self?.handleNSEvent(event)
         }
         
-        // Local monitor for when Switch is active
-        localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
-            if let self = self, self.handleKeyEvent(event) {
+        // 2. Local monitor for when Switch is active
+        localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .systemDefined]) { [weak self] event in
+            if let self = self, self.isF8Event(event) || self.isOptionSpaceEvent(event) {
+                self.recordF8Press()
                 return nil
             }
             return event
         }
+        
+        // 3. CoreGraphics Event Tap to intercept physical F8 key (media Play/Pause 16 & standard F8 100)
+        setupEventTap()
     }
     
-    @discardableResult
-    private func handleKeyEvent(_ event: NSEvent) -> Bool {
-        guard isEnabled else { return false }
+    private func setupEventTap() {
+        let mask = (CGEventMask(1) << CGEventType.keyDown.rawValue) | (CGEventMask(1) << 14)
+        guard let tap = CGEvent.tapCreate(
+            tap: .cgSessionEventTap,
+            place: .headInsertEventTap,
+            options: .defaultTap,
+            eventsOfInterest: mask,
+            callback: { (proxy, type, event, refcon) -> Unmanaged<CGEvent>? in
+                guard WisprFlowService.shared.isEnabled else {
+                    return Unmanaged.passUnretained(event)
+                }
+                
+                // Check standard F8 (keycode 100)
+                if type == .keyDown {
+                    let keycode = event.getIntegerValueField(.keyboardEventKeycode)
+                    if keycode == 100 {
+                        if WisprFlowService.shared.recordF8Press() {
+                            return nil // consume event
+                        }
+                    }
+                }
+                
+                // Check System-Defined media key for F8 (Play/Pause keycode 16 on Mac keyboards without Fn)
+                if type.rawValue == 14 {
+                    if let nsEvent = NSEvent(cgEvent: event),
+                       nsEvent.type == .systemDefined,
+                       nsEvent.subtype.rawValue == 8 {
+                        let data = nsEvent.data1
+                        let keyCode = Int((data & 0xFFFF0000) >> 16)
+                        let keyFlags = data & 0x0000FFFF
+                        let isKeyDown = ((keyFlags & 0xFF00) >> 8) == 0xA
+                        let isRepeat = (keyFlags & 0x1) != 0
+                        
+                        // 16 is NX_KEYTYPE_PLAY (physical F8 key on MacBook keyboards without Fn)
+                        if keyCode == 16 && isKeyDown && !isRepeat {
+                            if WisprFlowService.shared.recordF8Press() {
+                                return nil // consume event so Music app doesn't open
+                            }
+                        }
+                    }
+                }
+                
+                return Unmanaged.passUnretained(event)
+            },
+            userInfo: nil
+        ) else {
+            return
+        }
         
-        // Shortcut 1: F8 Key (KeyCode 100)
-        if event.keyCode == 100 {
-            toggleDictation()
+        self.eventTap = tap
+        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+        self.runLoopSource = source
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        CGEvent.tapEnable(tap: tap, enable: true)
+    }
+    
+    private func handleNSEvent(_ event: NSEvent) {
+        if isF8Event(event) || isOptionSpaceEvent(event) {
+            _ = recordF8Press()
+        }
+    }
+    
+    private func isF8Event(_ event: NSEvent) -> Bool {
+        // Standard F8 key
+        if event.type == .keyDown && event.keyCode == 100 {
             return true
         }
         
-        // Shortcut 2: Option + Space (KeyCode 49 with .option flag)
-        if event.keyCode == 49 && event.modifierFlags.contains(.option) && !event.modifierFlags.contains(.command) && !event.modifierFlags.contains(.control) {
-            let now = ProcessInfo.processInfo.systemUptime
-            if now - lastOptionSpaceTime > 0.35 {
-                lastOptionSpaceTime = now
-                toggleDictation()
+        // System Defined Media Key for F8 (Play/Pause key on MacBook keyboards without Fn)
+        if event.type == .systemDefined && event.subtype.rawValue == 8 {
+            let data = event.data1
+            let keyCode = Int((data & 0xFFFF0000) >> 16)
+            let keyFlags = data & 0x0000FFFF
+            let isKeyDown = ((keyFlags & 0xFF00) >> 8) == 0xA
+            let isRepeat = (keyFlags & 0x1) != 0
+            if keyCode == 16 && isKeyDown && !isRepeat {
                 return true
             }
         }
         
+        return false
+    }
+    
+    private func isOptionSpaceEvent(_ event: NSEvent) -> Bool {
+        if event.type == .keyDown && event.keyCode == 49 && event.modifierFlags.contains(.option) && !event.modifierFlags.contains(.command) && !event.modifierFlags.contains(.control) {
+            return true
+        }
+        return false
+    }
+    
+    @discardableResult
+    public func recordF8Press() -> Bool {
+        let now = ProcessInfo.processInfo.systemUptime
+        let delta = now - lastF8Time
+        
+        if delta > 0.25 {
+            lastF8Time = now
+            DispatchQueue.main.async { [weak self] in
+                self?.toggleDictation()
+            }
+            return true
+        }
         return false
     }
     
@@ -902,7 +1004,7 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
         return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
-    // MARK: - Auto-Paste Emulation (⌘V Keypress)
+    // MARK: - Auto-Paste Emulation (⌘V Keypress & Auto-Return)
     
     public func pasteTranscribedText(_ text: String) {
         // Copy to system clipboard
@@ -911,7 +1013,8 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
         pb.setString(text, forType: .string)
         
         // Emulate ⌘V keystroke via CGEvent into the frontmost app
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+            guard let self = self else { return }
             let src = CGEventSource(stateID: .hidSystemState)
             let vKeyCode: CGKeyCode = 9 // 'v' key
             
@@ -925,6 +1028,21 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
             
             keyDown.post(tap: .cghidEventTap)
             keyUp.post(tap: .cghidEventTap)
+            
+            // Automatically click Return / Enter key to submit message/input
+            if self.autoPressReturn {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                    let returnKeyCode: CGKeyCode = 36 // kVK_Return
+                    guard let returnDown = CGEvent(keyboardEventSource: src, virtualKey: returnKeyCode, keyDown: true),
+                          let returnUp = CGEvent(keyboardEventSource: src, virtualKey: returnKeyCode, keyDown: false) else {
+                        return
+                    }
+                    returnDown.flags = []
+                    returnUp.flags = []
+                    returnDown.post(tap: .cghidEventTap)
+                    returnUp.post(tap: .cghidEventTap)
+                }
+            }
         }
     }
     

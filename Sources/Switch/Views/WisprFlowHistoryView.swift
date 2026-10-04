@@ -174,6 +174,9 @@ public struct WisprFlowHistoryView: View {
                             Toggle("Auto-Paste into Active Application (⌘V)", isOn: $service.autoPaste)
                                 .font(.system(size: 12))
                             
+                            Toggle("Auto-Press Return (Enter) after Paste", isOn: $service.autoPressReturn)
+                                .font(.system(size: 12))
+                            
                             Toggle("Automatically Remove Filler Words (um, uh, matlab, etc.)", isOn: $service.removeFillerWords)
                                 .font(.system(size: 12))
                             

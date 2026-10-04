@@ -117,11 +117,10 @@ Switch packs over **28 native macOS switches** into an ultra-responsive, beautif
 
 | Shortcut | Action |
 | :--- | :--- |
-| **`⌥ Space`** or **`F8`** | Start / Stop **Wispr Flow AI Voice Dictation** (Auto-Paste) |
+| **`F8`** (Single Key) | Start / Stop **Wispr Flow AI Voice Dictation** (Auto-Paste & Auto-Return) |
 | **`F9`** | Toggle Floating Clipboard Manager HUD |
 | **Double Knock Chassis** | Trigger Hands-Free Screenshot |
 | **`⌘ ,`** | Open Switch Preferences |
-| **`⌘ Q`** | Quit Switch |
 | **`⌘ Q`** | Quit Switch |
 
 ---
