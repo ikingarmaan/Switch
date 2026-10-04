@@ -226,7 +226,7 @@ public struct WisprFlowHistoryView: View {
                         Text(state.searchText.isEmpty ? "No Voice Dictations Yet" : "No matching transcriptions")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(.secondary)
-                        Text("Press ⌥ Space or F8 anywhere to start dictating in Hinglish or English!")
+                        Text("Hold 'L' key for 2 seconds (or press F8) anywhere to start dictating in Hinglish or English!")
                             .font(.system(size: 11))
                             .foregroundColor(.secondary.opacity(0.8))
                             .multilineTextAlignment(.center)

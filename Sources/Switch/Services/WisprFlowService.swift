@@ -346,42 +346,48 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
         NotificationCenter.default.post(name: .wisprFlowStateDidChange, object: enabled)
     }
     
-    // MARK: - Global Shortcut Listeners (Hold ⌥ Option to Speak, Release to Paste & Enter, and F8)
+    // MARK: - Global Shortcut Listeners (Hold 'L' Key for 2s to Dictate, Release to Paste & Return, plus F8 toggle)
     
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
-    private var isOptionHeld: Bool = false
-    private var optionKeyDownTime: TimeInterval = 0
-    private var otherKeyPressedWithOption: Bool = false
+    private var isLKeyHeld: Bool = false
+    private var isLDictationActive: Bool = false
+    private var lKeyHoldWorkItem: DispatchWorkItem?
     
     private func setupGlobalShortcutListeners() {
-        // 1. Global monitor for standard keys, modifier changes (Option key), and systemDefined media keys
-        globalEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.flagsChanged, .keyDown, .systemDefined]) { [weak self] event in
+        // 1. Global monitor for key down, key up, and systemDefined media keys
+        globalEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .keyUp, .systemDefined]) { [weak self] event in
             self?.handleNSEvent(event)
         }
         
         // 2. Local monitor for when Switch is active
-        localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged, .keyDown, .systemDefined]) { [weak self] event in
+        localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .systemDefined]) { [weak self] event in
             if let self = self {
-                if event.type == .flagsChanged {
-                    let isOption = event.modifierFlags.contains(.option)
-                    self.handleOptionKeyFlagsChanged(isOptionDown: isOption)
-                } else if self.isF8Event(event) || self.isOptionSpaceEvent(event) {
-                    self.recordF8Press()
-                    return nil
-                } else if self.isOptionHeld {
-                    self.otherKeyPressedWithOption = true
+                if event.type == .keyDown {
+                    if event.keyCode == 37 {
+                        let hasMod = event.modifierFlags.contains(.command) || event.modifierFlags.contains(.control) || event.modifierFlags.contains(.option)
+                        self.handleLKeyDown(hasModifiers: hasMod)
+                    } else if self.isF8Event(event) || self.isOptionSpaceEvent(event) {
+                        self.recordF8Press()
+                        return nil
+                    } else if self.isLKeyHeld && !self.isLDictationActive {
+                        self.cancelLKeyTimer()
+                    }
+                } else if event.type == .keyUp {
+                    if event.keyCode == 37 {
+                        self.handleLKeyUp()
+                    }
                 }
             }
             return event
         }
         
-        // 3. CoreGraphics Event Tap to intercept physical Option key hold/release and F8
+        // 3. CoreGraphics Event Tap to intercept physical L hold and F8
         setupEventTap()
     }
     
     private func setupEventTap() {
-        let mask = (CGEventMask(1) << CGEventType.keyDown.rawValue) | (CGEventMask(1) << CGEventType.flagsChanged.rawValue) | (CGEventMask(1) << 14)
+        let mask = (CGEventMask(1) << CGEventType.keyDown.rawValue) | (CGEventMask(1) << CGEventType.keyUp.rawValue) | (CGEventMask(1) << 14)
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
@@ -392,20 +398,23 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
                     return Unmanaged.passUnretained(event)
                 }
                 
-                // Check Option Key (FlagsChanged) Push-to-Talk
-                if type == .flagsChanged {
-                    let isOption = event.flags.contains(.maskAlternate)
-                    WisprFlowService.shared.handleOptionKeyFlagsChanged(isOptionDown: isOption)
-                }
+                let keycode = event.getIntegerValueField(.keyboardEventKeycode)
                 
-                // Track if other key is pressed with Option
-                if type == .keyDown {
-                    if WisprFlowService.shared.isOptionHeld {
-                        WisprFlowService.shared.otherKeyPressedWithOption = true
+                // Track 'L' key (keycode 37)
+                if keycode == 37 {
+                    if type == .keyDown {
+                        let flags = event.flags
+                        let hasMod = flags.contains(.maskCommand) || flags.contains(.maskControl) || flags.contains(.maskAlternate)
+                        WisprFlowService.shared.handleLKeyDown(hasModifiers: hasMod)
+                    } else if type == .keyUp {
+                        WisprFlowService.shared.handleLKeyUp()
+                    }
+                } else if type == .keyDown {
+                    if WisprFlowService.shared.isLKeyHeld && !WisprFlowService.shared.isLDictationActive {
+                        WisprFlowService.shared.cancelLKeyTimer()
                     }
                     
                     // Check standard F8 (keycode 100)
-                    let keycode = event.getIntegerValueField(.keyboardEventKeycode)
                     if keycode == 100 {
                         if WisprFlowService.shared.recordF8Press() {
                             return nil // consume event
@@ -447,49 +456,73 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
         CGEvent.tapEnable(tap: tap, enable: true)
     }
     
-    public func handleOptionKeyFlagsChanged(isOptionDown: Bool) {
+    public func handleLKeyDown(hasModifiers: Bool) {
         guard isEnabled else { return }
+        if hasModifiers {
+            cancelLKeyTimer()
+            return
+        }
         
-        if isOptionDown {
-            if !isOptionHeld {
-                isOptionHeld = true
-                optionKeyDownTime = ProcessInfo.processInfo.systemUptime
-                otherKeyPressedWithOption = false
+        guard !isLKeyHeld else { return }
+        isLKeyHeld = true
+        
+        // Start 2.0 second hold timer
+        lKeyHoldWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self = self, self.isLKeyHeld, self.isEnabled else { return }
+            self.isLDictationActive = true
+            DispatchQueue.main.async {
+                self.startRecording()
+            }
+        }
+        self.lKeyHoldWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: workItem)
+    }
+    
+    public func handleLKeyUp() {
+        guard isEnabled else { return }
+        isLKeyHeld = false
+        lKeyHoldWorkItem?.cancel()
+        lKeyHoldWorkItem = nil
+        
+        if isLDictationActive {
+            isLDictationActive = false
+            if isListening {
                 DispatchQueue.main.async { [weak self] in
-                    self?.startRecording()
+                    self?.stopAndTranscribe()
                 }
             }
-        } else {
-            if isOptionHeld {
-                isOptionHeld = false
-                let duration = ProcessInfo.processInfo.systemUptime - optionKeyDownTime
-                if otherKeyPressedWithOption {
-                    if isListening {
-                        DispatchQueue.main.async { [weak self] in
-                            self?.cancelRecording()
-                        }
-                    }
-                } else if isListening && duration >= 0.15 {
-                    DispatchQueue.main.async { [weak self] in
-                        self?.stopAndTranscribe()
-                    }
-                } else if isListening {
-                    DispatchQueue.main.async { [weak self] in
-                        self?.cancelRecording()
-                    }
+        }
+    }
+    
+    public func cancelLKeyTimer() {
+        isLKeyHeld = false
+        lKeyHoldWorkItem?.cancel()
+        lKeyHoldWorkItem = nil
+        if isLDictationActive {
+            isLDictationActive = false
+            if isListening {
+                DispatchQueue.main.async { [weak self] in
+                    self?.cancelRecording()
                 }
             }
         }
     }
     
     private func handleNSEvent(_ event: NSEvent) {
-        if event.type == .flagsChanged {
-            let isOption = event.modifierFlags.contains(.option)
-            handleOptionKeyFlagsChanged(isOptionDown: isOption)
-        } else if isF8Event(event) || isOptionSpaceEvent(event) {
-            _ = recordF8Press()
-        } else if isOptionHeld && event.type == .keyDown {
-            otherKeyPressedWithOption = true
+        if event.type == .keyDown {
+            if event.keyCode == 37 {
+                let hasMod = event.modifierFlags.contains(.command) || event.modifierFlags.contains(.control) || event.modifierFlags.contains(.option)
+                handleLKeyDown(hasModifiers: hasMod)
+            } else if isF8Event(event) || isOptionSpaceEvent(event) {
+                _ = recordF8Press()
+            } else if isLKeyHeld && !isLDictationActive {
+                cancelLKeyTimer()
+            }
+        } else if event.type == .keyUp {
+            if event.keyCode == 37 {
+                handleLKeyUp()
+            }
         }
     }
     
