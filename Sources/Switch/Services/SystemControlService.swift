@@ -37,6 +37,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
     case cleanMacCache = "cleanMacCache"
     case wisprFlow = "wisprFlow"
     case dockDoor = "dockDoor"
+    case mouseBoostPro = "mouseBoostPro"
     
     public var id: String { rawValue }
     
@@ -75,6 +76,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .cleanMacCache: return "Mac Cleaner"
         case .wisprFlow: return "Wispr Flow (Voice to Text)"
         case .dockDoor: return "DockDoor (Window Previews)"
+        case .mouseBoostPro: return "MouseBoost Pro (Steroids)"
         }
     }
     
@@ -113,6 +115,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .cleanMacCache: return "trash.circle.fill"
         case .wisprFlow: return "waveform.and.mic"
         case .dockDoor: return "macwindow.on.rectangle"
+        case .mouseBoostPro: return "cursorarrow.rays"
         }
     }
     
@@ -332,6 +335,10 @@ public final class SystemControlService: @unchecked Sendable {
         case .dockDoor:
             let dd = DockDoorService.shared
             return (dd.isEnabled, dd.statusSubtitle)
+            
+        case .mouseBoostPro:
+            let mb = MouseBoostProService.shared
+            return (mb.isEnabled, mb.statusSubtitle)
         }
     }
     
@@ -512,6 +519,11 @@ public final class SystemControlService: @unchecked Sendable {
         case .dockDoor:
             DispatchQueue.main.async {
                 DockDoorService.shared.setEnabled(isOn)
+            }
+            
+        case .mouseBoostPro:
+            DispatchQueue.main.async {
+                MouseBoostProService.shared.setEnabled(isOn)
             }
         }
     }

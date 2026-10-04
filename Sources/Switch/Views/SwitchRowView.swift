@@ -2476,6 +2476,169 @@ public struct SwitchRowView: View {
                             }
                         }
                     }
+                } else if item.type == .mouseBoostPro {
+                    let mb = MouseBoostProService.shared
+                    HStack(spacing: 4) {
+                        Menu {
+                            Section("Scroll Wheel Speed (Turbo)") {
+                                ForEach(MouseBoostScrollSpeed.allCases) { speed in
+                                    Button(action: {
+                                        mb.setScrollSpeed(speed)
+                                    }) {
+                                        HStack {
+                                            Text(speed.label)
+                                            if mb.scrollSpeed == speed {
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Section("Middle Click (Wheel) Action") {
+                                ForEach(MouseBoostMiddleClickAction.allCases) { act in
+                                    Button(action: {
+                                        mb.setMiddleClickAction(act)
+                                    }) {
+                                        HStack {
+                                            Text(act.label)
+                                            if mb.middleClickAction == act {
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Section("Side Button 4 (Back)") {
+                                ForEach(MouseBoostSideButtonAction.allCases) { act in
+                                    Button(action: {
+                                        mb.setButton4Action(act)
+                                    }) {
+                                        HStack {
+                                            Text(act.label)
+                                            if mb.button4Action == act {
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Section("Side Button 5 (Forward)") {
+                                ForEach(MouseBoostSideButtonAction.allCases) { act in
+                                    Button(action: {
+                                        mb.setButton5Action(act)
+                                    }) {
+                                        HStack {
+                                            Text(act.label)
+                                            if mb.button5Action == act {
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Section("Features & Direction") {
+                                Button(action: {
+                                    mb.setInvertScrollWheel(!mb.invertScrollWheel)
+                                }) {
+                                    HStack {
+                                        Text("Invert Mouse Wheel Direction")
+                                        if mb.invertScrollWheel {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                                
+                                Button(action: {
+                                    mb.setOptionRightClickMenu(!mb.optionRightClickMenu)
+                                }) {
+                                    HStack {
+                                        Text("⌥ + Right Click Super HUD")
+                                        if mb.optionRightClickMenu {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                                
+                                Button(action: {
+                                    mb.setSoundFeedback(!mb.soundFeedback)
+                                }) {
+                                    HStack {
+                                        Text("Sound Feedback")
+                                        if mb.soundFeedback {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            Button(action: {
+                                mb.showSuperHUD()
+                            }) {
+                                HStack {
+                                    Text("Open MouseBoost Pro Super HUD")
+                                    Image(systemName: "cursorarrow.rays")
+                                }
+                            }
+                            
+                            Button(action: {
+                                mb.checkAccessibilityPermission(prompt: true)
+                            }) {
+                                HStack {
+                                    Text("Check Accessibility Permission")
+                                    Image(systemName: "hand.raised.fill")
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 3) {
+                                Text(item.subtitle ?? (item.isOn ? "\(mb.scrollSpeed.shortLabel) Scroll · \(mb.middleClickAction == .superMenu ? "Super HUD" : "Active")" : "Mouse Steroids"))
+                                    .font(.system(size: 12, weight: item.isOn ? .bold : .medium, design: .rounded))
+                                    .foregroundColor(item.isOn ? Color(red: 0.98, green: 0.65, blue: 0.25) : Color.gray.opacity(0.85))
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 8))
+                                    .foregroundColor(Color.gray.opacity(0.6))
+                            }
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                    }
+                    .contextMenu {
+                        Button(action: {
+                            mb.showSuperHUD()
+                        }) {
+                            HStack {
+                                Text("Open MouseBoost Pro Super HUD")
+                                Image(systemName: "cursorarrow.rays")
+                            }
+                        }
+                        
+                        Divider()
+                        
+                        Button(action: {
+                            mb.setEnabled(!mb.isEnabled)
+                        }) {
+                            HStack {
+                                Text(mb.isEnabled ? "Disable MouseBoost Pro" : "Enable MouseBoost Pro")
+                                Image(systemName: "power")
+                            }
+                        }
+                        
+                        Divider()
+                        
+                        Button(action: {
+                            mb.checkAccessibilityPermission(prompt: true)
+                        }) {
+                            HStack {
+                                Text("Check Accessibility Permission...")
+                                Image(systemName: "lock.shield")
+                            }
+                        }
+                    }
                 } else if let subtitle = item.subtitle, !subtitle.isEmpty {
                     Text(subtitle)
                         .font(.system(size: 12, weight: .regular))

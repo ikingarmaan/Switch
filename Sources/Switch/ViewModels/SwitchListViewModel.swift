@@ -578,10 +578,24 @@ public final class SwitchListViewModel: ObservableObject {
                 self.switches[index].subtitle = dd.statusSubtitle
             }
             .store(in: &cancellables)
+            
+        NotificationCenter.default.publisher(for: .mouseBoostProStateDidChange)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] notif in
+                guard let self = self,
+                      let index = self.switches.firstIndex(where: { $0.type == .mouseBoostPro })
+                else { return }
+                let mb = MouseBoostProService.shared
+                let isEnabled = notif.object as? Bool ?? mb.isEnabled
+                self.switches[index].isOn = isEnabled
+                self.switches[index].isLoading = false
+                self.switches[index].subtitle = mb.statusSubtitle
+            }
+            .store(in: &cancellables)
     }
     
     private func setupSwitches() {
-        // Ordered as shown in user's image + lockKeyboard + cameraPreview + timer + amphetamine + mouseJiggler + autoScroll + googlyEyes + volumeBoost + systemMonitor + loomRecorder + forceQuitApps + autoVPN + tidyFolders + adblockDNS + knockScreenshot + clipboardManager + stickyNotes + selfControl + locationServices + ramGpuReset + cleanMacCache + autoWallpaper + wisprFlow + dockDoor
+        // Ordered as shown in user's image + lockKeyboard + cameraPreview + timer + amphetamine + mouseJiggler + autoScroll + googlyEyes + volumeBoost + systemMonitor + loomRecorder + forceQuitApps + autoVPN + tidyFolders + adblockDNS + knockScreenshot + clipboardManager + stickyNotes + selfControl + locationServices + ramGpuReset + cleanMacCache + autoWallpaper + wisprFlow + dockDoor + mouseBoostPro
         let initialTypes: [SwitchType] = [
             .hideDesktop,
             .keepAwake,
@@ -613,7 +627,8 @@ public final class SwitchListViewModel: ObservableObject {
             .cleanMacCache,
             .autoWallpaper,
             .wisprFlow,
-            .dockDoor
+            .dockDoor,
+            .mouseBoostPro
         ]
         
         self.switches = initialTypes.map { type in
