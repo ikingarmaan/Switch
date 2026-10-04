@@ -218,6 +218,109 @@ public final class WallpaperChangerService: NSObject, ObservableObject, @uncheck
         playTickSound()
     }
     
+    private static var singleColorCache: [String: Bool] = [:]
+    private static let cacheLock = NSLock()
+    
+    /// Checks and detects whether an image is a single/solid color image or system thumbnail to exclude it
+    public static func isSingleColorImage(_ url: URL) -> Bool {
+        let path = url.path
+        
+        cacheLock.lock()
+        if let cached = singleColorCache[path] {
+            cacheLock.unlock()
+            return cached
+        }
+        cacheLock.unlock()
+        
+        let result = evaluateIsSingleColorImage(url)
+        
+        cacheLock.lock()
+        singleColorCache[path] = result
+        cacheLock.unlock()
+        
+        return result
+    }
+    
+    private static func evaluateIsSingleColorImage(_ url: URL) -> Bool {
+        let pathLower = url.path.lowercased()
+        let nameLower = url.lastPathComponent.lowercased()
+        
+        // Exclude directories / files matching solid color keywords
+        if pathLower.contains("solid color") || pathLower.contains("solid_color") || pathLower.contains("solidcolors") || pathLower.contains("/solid/") || pathLower.contains("/solid colors/") || pathLower.contains("single color") {
+            return true
+        }
+        
+        // Exclude system thumbnails folders and preview files
+        if pathLower.contains(".thumbnails") || pathLower.contains("/thumbnails/") || nameLower.contains("thumbnail") {
+            return true
+        }
+        
+        // Check file size: tiny files (< 25 KB) are solid swatches / placeholders
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+           let fileSize = attrs[.size] as? Int64, fileSize < 25_000 {
+            return true
+        }
+        
+        guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
+            return true
+        }
+        
+        // Too small resolution to be a proper photo wallpaper
+        if cgImage.width <= 64 || cgImage.height <= 64 {
+            return true
+        }
+        
+        // Downsample to an 8x8 sRGB grid (64 sample pixels) to compute color variance
+        let width = 8
+        let height = 8
+        let bytesPerPixel = 4
+        let bytesPerRow = bytesPerPixel * width
+        let bitsPerComponent = 8
+        var rawData = [UInt8](repeating: 0, count: width * height * bytesPerPixel)
+        
+        guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(
+                data: &rawData,
+                width: width,
+                height: height,
+                bitsPerComponent: bitsPerComponent,
+                bytesPerRow: bytesPerRow,
+                space: colorSpace,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+              ) else {
+            return false
+        }
+        
+        context.interpolationQuality = .medium
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        
+        var minR = 255, maxR = 0
+        var minG = 255, maxG = 0
+        var minB = 255, maxB = 0
+        
+        for i in stride(from: 0, to: rawData.count, by: bytesPerPixel) {
+            let r = Int(rawData[i])
+            let g = Int(rawData[i + 1])
+            let b = Int(rawData[i + 2])
+            
+            if r < minR { minR = r }
+            if r > maxR { maxR = r }
+            if g < minG { minG = g }
+            if g > maxG { maxG = g }
+            if b < minB { minB = b }
+            if b > maxB { maxB = b }
+        }
+        
+        let deltaR = maxR - minR
+        let deltaG = maxG - minG
+        let deltaB = maxB - minB
+        let maxDelta = max(deltaR, deltaG, deltaB)
+        
+        // If color variation across the entire image is <= 8, it's a solid single color!
+        return maxDelta <= 8
+    }
+    
     public func reloadWallpaperList() {
         let extensions: Set<String> = ["heic", "jpg", "jpeg", "png", "webp", "tiff", "tif"]
         var urls: [URL] = []
@@ -240,30 +343,37 @@ public final class WallpaperChangerService: NSObject, ObservableObject, @uncheck
             if let enumerator = FileManager.default.enumerator(at: rootURL, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles, .skipsPackageDescendants]) {
                 for case let fileURL as URL in enumerator {
                     if extensions.contains(fileURL.pathExtension.lowercased()) {
-                        urls.append(fileURL)
+                        // Exclude single/solid color images and thumbnails
+                        if !Self.isSingleColorImage(fileURL) {
+                            urls.append(fileURL)
+                        }
                     }
                 }
             }
             
-            // Direct contents check
+            // Direct contents check if enumerator was empty
             if urls.isEmpty {
                 if let direct = try? FileManager.default.contentsOfDirectory(at: rootURL, includingPropertiesForKeys: nil, options: []) {
                     for fileURL in direct {
                         if extensions.contains(fileURL.pathExtension.lowercased()) {
-                            urls.append(fileURL)
+                            if !Self.isSingleColorImage(fileURL) {
+                                urls.append(fileURL)
+                            }
                         }
                     }
                 }
             }
         }
         
-        // If user folder was empty, fallback to default Mac wallpapers
+        // If user folder was empty, fallback to default Mac wallpapers (excluding single colors)
         if urls.isEmpty && source != .macDefault {
             let rootURL = URL(fileURLWithPath: Self.macDefaultWallpapersPath)
             if let direct = try? FileManager.default.contentsOfDirectory(at: rootURL, includingPropertiesForKeys: nil, options: []) {
                 for fileURL in direct {
                     if extensions.contains(fileURL.pathExtension.lowercased()) {
-                        urls.append(fileURL)
+                        if !Self.isSingleColorImage(fileURL) {
+                            urls.append(fileURL)
+                        }
                     }
                 }
             }

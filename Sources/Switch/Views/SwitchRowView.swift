@@ -580,6 +580,16 @@ public struct SwitchRowView: View {
                             
                             Divider()
                             
+                            Button(action: {}) {
+                                HStack {
+                                    Text("🚫 Single Colors Excluded (Photos Only)")
+                                    Image(systemName: "checkmark.seal.fill")
+                                }
+                            }
+                            .disabled(true)
+                            
+                            Divider()
+                            
                             Section("Finder Locations") {
                                 Button(action: {
                                     WallpaperChangerService.shared.revealDefaultWallpapersInFinder()
