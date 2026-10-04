@@ -666,8 +666,8 @@ public struct SwitchRowView: View {
                             }
                         } label: {
                             HStack(spacing: 3) {
-                                Text(item.isOn ? WallpaperChangerService.shared.interval.shortLabel : "Off")
-                                    .font(.system(size: 12, weight: item.isOn ? .bold : .regular, design: .rounded))
+                                Text(item.subtitle ?? (item.isOn ? "\(WallpaperChangerService.shared.interval.shortLabel) · \(WallpaperChangerService.shared.source.shortTitle)" : "Auto Wallpaper"))
+                                    .font(.system(size: 12, weight: item.isOn ? .bold : .medium, design: .rounded))
                                     .foregroundColor(item.isOn ? Color(red: 0.35, green: 0.78, blue: 0.98) : Color.gray.opacity(0.85))
                                 Image(systemName: "chevron.down")
                                     .font(.system(size: 8))

@@ -46,27 +46,27 @@ public enum WallpaperInterval: Int, CaseIterable, Identifiable, Sendable {
 }
 
 public enum WallpaperSource: String, CaseIterable, Identifiable, Sendable {
+    case allPictures = "allPictures"
     case macDefault = "macDefault"
     case userWallpapers = "userWallpapers"
-    case allPictures = "allPictures"
     case customFolder = "customFolder"
     
     public var id: String { rawValue }
     
     public var title: String {
         switch self {
-        case .macDefault: return "🍏 Mac Default Wallpapers"
+        case .allPictures: return "🖼️ All Pictures & Wallpapers (System + Finder)"
+        case .macDefault: return "🍏 Mac System Wallpapers"
         case .userWallpapers: return "📁 User Wallpapers (~/Pictures/Wallpapers)"
-        case .allPictures: return "🖼️ All Pictures (~/Pictures)"
         case .customFolder: return "📂 Choose Custom Folder..."
         }
     }
     
     public var shortTitle: String {
         switch self {
-        case .macDefault: return "Default Wallpapers"
+        case .allPictures: return "All Pictures"
+        case .macDefault: return "System Wallpapers"
         case .userWallpapers: return "User Wallpapers"
-        case .allPictures: return "Pictures"
         case .customFolder: return "Custom Folder"
         }
     }
@@ -250,14 +250,14 @@ public final class WallpaperChangerService: NSObject, ObservableObject, @uncheck
             return true
         }
         
-        // Exclude system thumbnails folders and preview files
-        if pathLower.contains(".thumbnails") || pathLower.contains("/thumbnails/") || nameLower.contains("thumbnail") {
+        // Exclude system thumbnail png previews (e.g. Sonoma Horizon Thumbnail.png)
+        if nameLower.contains("thumbnail") && (nameLower.hasSuffix(".png") || nameLower.hasSuffix(".jpg")) {
             return true
         }
         
-        // Check file size: tiny files (< 25 KB) are solid swatches / placeholders
+        // Check file size: tiny files (< 20 KB) are solid swatches / placeholders
         if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
-           let fileSize = attrs[.size] as? Int64, fileSize < 25_000 {
+           let fileSize = attrs[.size] as? Int64, fileSize < 20_000 {
             return true
         }
         
@@ -321,66 +321,106 @@ public final class WallpaperChangerService: NSObject, ObservableObject, @uncheck
         return maxDelta <= 8
     }
     
-    public func reloadWallpaperList() {
-        let extensions: Set<String> = ["heic", "jpg", "jpeg", "png", "webp", "tiff", "tif"]
-        var urls: [URL] = []
+    private func scanDirectory(at path: String, extensions: Set<String>) -> [URL] {
+        var results: [URL] = []
+        guard FileManager.default.fileExists(atPath: path) else { return results }
         
-        let folderToScan: String
-        switch source {
-        case .macDefault:
-            folderToScan = Self.macDefaultWallpapersPath
-        case .userWallpapers:
-            ensureUserWallpapersDirectoryExists()
-            folderToScan = userWallpapersPath
-        case .allPictures:
-            folderToScan = FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first?.path ?? "\(NSHomeDirectory())/Pictures"
-        case .customFolder:
-            folderToScan = customFolderPath.isEmpty ? userWallpapersPath : customFolderPath
-        }
-        
-        if FileManager.default.fileExists(atPath: folderToScan) {
-            let rootURL = URL(fileURLWithPath: folderToScan)
-            if let enumerator = FileManager.default.enumerator(at: rootURL, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles, .skipsPackageDescendants]) {
-                for case let fileURL as URL in enumerator {
-                    if extensions.contains(fileURL.pathExtension.lowercased()) {
-                        // Exclude single/solid color images and thumbnails
-                        if !Self.isSingleColorImage(fileURL) {
-                            urls.append(fileURL)
-                        }
-                    }
-                }
-            }
-            
-            // Direct contents check if enumerator was empty
-            if urls.isEmpty {
-                if let direct = try? FileManager.default.contentsOfDirectory(at: rootURL, includingPropertiesForKeys: nil, options: []) {
-                    for fileURL in direct {
-                        if extensions.contains(fileURL.pathExtension.lowercased()) {
-                            if !Self.isSingleColorImage(fileURL) {
-                                urls.append(fileURL)
-                            }
-                        }
+        let rootURL = URL(fileURLWithPath: path)
+        if let enumerator = FileManager.default.enumerator(
+            at: rootURL,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsPackageDescendants]
+        ) {
+            for case let fileURL as URL in enumerator {
+                let ext = fileURL.pathExtension.lowercased()
+                if extensions.contains(ext) {
+                    if !Self.isSingleColorImage(fileURL) {
+                        results.append(fileURL)
                     }
                 }
             }
         }
         
-        // If user folder was empty, fallback to default Mac wallpapers (excluding single colors)
-        if urls.isEmpty && source != .macDefault {
-            let rootURL = URL(fileURLWithPath: Self.macDefaultWallpapersPath)
+        if results.isEmpty {
             if let direct = try? FileManager.default.contentsOfDirectory(at: rootURL, includingPropertiesForKeys: nil, options: []) {
                 for fileURL in direct {
-                    if extensions.contains(fileURL.pathExtension.lowercased()) {
+                    let ext = fileURL.pathExtension.lowercased()
+                    if extensions.contains(ext) {
                         if !Self.isSingleColorImage(fileURL) {
-                            urls.append(fileURL)
+                            results.append(fileURL)
                         }
                     }
                 }
             }
         }
         
-        self.availableWallpapers = urls.sorted { $0.lastPathComponent < $1.lastPathComponent }
-        self.totalWallpapersCount = urls.count
+        return results
+    }
+    
+    public func reloadWallpaperList() {
+        let extensions: Set<String> = ["heic", "jpg", "jpeg", "png", "webp", "tiff", "tif"]
+        var scannedURLs: [URL] = []
+        
+        let systemDirs = [
+            Self.macDefaultWallpapersPath,
+            "\(Self.macDefaultWallpapersPath)/.thumbnails",
+            "\(Self.macDefaultWallpapersPath)/.wallpapers",
+            "/Library/Desktop Pictures"
+        ]
+        
+        let picturesDir = FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first?.path ?? "\(NSHomeDirectory())/Pictures"
+        let desktopDir = "\(NSHomeDirectory())/Desktop"
+        
+        switch source {
+        case .allPictures:
+            // Combine all macOS system wallpapers + user wallpapers + Finder desktop & pictures!
+            for sys in systemDirs {
+                scannedURLs.append(contentsOf: scanDirectory(at: sys, extensions: extensions))
+            }
+            ensureUserWallpapersDirectoryExists()
+            scannedURLs.append(contentsOf: scanDirectory(at: userWallpapersPath, extensions: extensions))
+            scannedURLs.append(contentsOf: scanDirectory(at: picturesDir, extensions: extensions))
+            scannedURLs.append(contentsOf: scanDirectory(at: desktopDir, extensions: extensions))
+            if !customFolderPath.isEmpty {
+                scannedURLs.append(contentsOf: scanDirectory(at: customFolderPath, extensions: extensions))
+            }
+            
+        case .macDefault:
+            for sys in systemDirs {
+                scannedURLs.append(contentsOf: scanDirectory(at: sys, extensions: extensions))
+            }
+            
+        case .userWallpapers:
+            ensureUserWallpapersDirectoryExists()
+            scannedURLs.append(contentsOf: scanDirectory(at: userWallpapersPath, extensions: extensions))
+            scannedURLs.append(contentsOf: scanDirectory(at: picturesDir, extensions: extensions))
+            
+        case .customFolder:
+            let folder = customFolderPath.isEmpty ? userWallpapersPath : customFolderPath
+            scannedURLs.append(contentsOf: scanDirectory(at: folder, extensions: extensions))
+        }
+        
+        // Deduplicate wallpapers by unique base name or path
+        var seenNames = Set<String>()
+        var uniqueURLs: [URL] = []
+        
+        for url in scannedURLs {
+            let baseName = url.deletingPathExtension().lastPathComponent
+            if !seenNames.contains(baseName) {
+                seenNames.insert(baseName)
+                uniqueURLs.append(url)
+            }
+        }
+        
+        // Fallback to system wallpapers if user directory was empty
+        if uniqueURLs.isEmpty {
+            for sys in systemDirs {
+                uniqueURLs.append(contentsOf: scanDirectory(at: sys, extensions: extensions))
+            }
+        }
+        
+        self.availableWallpapers = uniqueURLs.sorted { $0.lastPathComponent < $1.lastPathComponent }
+        self.totalWallpapersCount = uniqueURLs.count
     }
     
     public func nextWallpaper(notify: Bool = true) {
