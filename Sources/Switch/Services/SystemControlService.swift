@@ -34,6 +34,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
     case selfControl = "selfControl"
     case locationServices = "locationServices"
     case ramGpuReset = "ramGpuReset"
+    case cleanMacCache = "cleanMacCache"
     case wisprFlow = "wisprFlow"
     
     public var id: String { rawValue }
@@ -70,6 +71,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .selfControl: return "Self Control & Recovery"
         case .locationServices: return "Location Services"
         case .ramGpuReset: return "RAM & GPU Reset"
+        case .cleanMacCache: return "Clean Mac Cache"
         case .wisprFlow: return "Wispr Flow (Voice to Text)"
         }
     }
@@ -106,6 +108,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .selfControl: return "shield.lefthalf.filled"
         case .locationServices: return "location.fill"
         case .ramGpuReset: return "bolt.fill"
+        case .cleanMacCache: return "trash.circle.fill"
         case .wisprFlow: return "waveform.and.mic"
         }
     }
@@ -315,6 +318,10 @@ public final class SystemControlService: @unchecked Sendable {
             let ram = RAMGPUResetService.shared
             return (ram.isAutoGuardEnabled, ram.statusSubtitle)
             
+        case .cleanMacCache:
+            let cleaner = CleanCacheService.shared
+            return (cleaner.isAutoGuardEnabled, cleaner.statusSubtitle)
+            
         case .wisprFlow:
             let wf = WisprFlowService.shared
             return (wf.isEnabled, wf.statusSubtitle)
@@ -479,6 +486,14 @@ public final class SystemControlService: @unchecked Sendable {
                 RAMGPUResetService.shared.setAutoGuardEnabled(isOn)
                 if isOn {
                     RAMGPUResetService.shared.triggerInstantReset()
+                }
+            }
+            
+        case .cleanMacCache:
+            DispatchQueue.main.async {
+                CleanCacheService.shared.setAutoGuardEnabled(isOn)
+                if isOn {
+                    CleanCacheService.shared.cleanNow()
                 }
             }
             
@@ -678,6 +693,10 @@ public final class SystemControlService: @unchecked Sendable {
         case .ramGpuReset:
             DispatchQueue.main.async {
                 RAMGPUResetService.shared.triggerInstantReset()
+            }
+        case .cleanMacCache:
+            DispatchQueue.main.async {
+                CleanCacheService.shared.cleanNow()
             }
         case .wisprFlow:
             DispatchQueue.main.async {

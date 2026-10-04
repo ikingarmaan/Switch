@@ -505,6 +505,30 @@ public final class SwitchListViewModel: ObservableObject {
             }
             .store(in: &cancellables)
             
+        NotificationCenter.default.publisher(for: .cleanCacheStateDidChange)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self = self,
+                      let index = self.switches.firstIndex(where: { $0.type == .cleanMacCache })
+                else { return }
+                let cleaner = CleanCacheService.shared
+                self.switches[index].isOn = cleaner.isAutoGuardEnabled
+                self.switches[index].isLoading = cleaner.isCleaning
+                self.switches[index].subtitle = cleaner.statusSubtitle
+            }
+            .store(in: &cancellables)
+            
+        NotificationCenter.default.publisher(for: .cleanCacheDidComplete)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self = self,
+                      let index = self.switches.firstIndex(where: { $0.type == .cleanMacCache })
+                else { return }
+                let cleaner = CleanCacheService.shared
+                self.switches[index].subtitle = cleaner.statusSubtitle
+            }
+            .store(in: &cancellables)
+            
         NotificationCenter.default.publisher(for: .wisprFlowStateDidChange)
             .receive(on: RunLoop.main)
             .sink { [weak self] notif in
@@ -543,7 +567,7 @@ public final class SwitchListViewModel: ObservableObject {
     }
     
     private func setupSwitches() {
-        // Ordered as shown in user's image + lockKeyboard + cameraPreview + timer + amphetamine + mouseJiggler + autoScroll + googlyEyes + volumeBoost + systemMonitor + loomRecorder + forceQuitApps + autoVPN + tidyFolders + adblockDNS + knockScreenshot + clipboardManager + stickyNotes + selfControl + locationServices + ramGpuReset + autoWallpaper + wisprFlow
+        // Ordered as shown in user's image + lockKeyboard + cameraPreview + timer + amphetamine + mouseJiggler + autoScroll + googlyEyes + volumeBoost + systemMonitor + loomRecorder + forceQuitApps + autoVPN + tidyFolders + adblockDNS + knockScreenshot + clipboardManager + stickyNotes + selfControl + locationServices + ramGpuReset + cleanMacCache + autoWallpaper + wisprFlow
         let initialTypes: [SwitchType] = [
             .hideDesktop,
             .keepAwake,
@@ -572,6 +596,7 @@ public final class SwitchListViewModel: ObservableObject {
             .selfControl,
             .locationServices,
             .ramGpuReset,
+            .cleanMacCache,
             .autoWallpaper,
             .wisprFlow
         ]
