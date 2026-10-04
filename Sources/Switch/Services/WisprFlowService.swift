@@ -346,32 +346,42 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
         NotificationCenter.default.post(name: .wisprFlowStateDidChange, object: enabled)
     }
     
-    // MARK: - Global Shortcut Listeners (F8 without Fn, and ⌥ Space)
+    // MARK: - Global Shortcut Listeners (Hold ⌥ Option to Speak, Release to Paste & Enter, and F8)
     
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+    private var isOptionHeld: Bool = false
+    private var optionKeyDownTime: TimeInterval = 0
+    private var otherKeyPressedWithOption: Bool = false
     
     private func setupGlobalShortcutListeners() {
-        // 1. Global monitor for standard keys and systemDefined media keys
-        globalEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .systemDefined]) { [weak self] event in
+        // 1. Global monitor for standard keys, modifier changes (Option key), and systemDefined media keys
+        globalEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.flagsChanged, .keyDown, .systemDefined]) { [weak self] event in
             self?.handleNSEvent(event)
         }
         
         // 2. Local monitor for when Switch is active
-        localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .systemDefined]) { [weak self] event in
-            if let self = self, self.isF8Event(event) || self.isOptionSpaceEvent(event) {
-                self.recordF8Press()
-                return nil
+        localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged, .keyDown, .systemDefined]) { [weak self] event in
+            if let self = self {
+                if event.type == .flagsChanged {
+                    let isOption = event.modifierFlags.contains(.option)
+                    self.handleOptionKeyFlagsChanged(isOptionDown: isOption)
+                } else if self.isF8Event(event) || self.isOptionSpaceEvent(event) {
+                    self.recordF8Press()
+                    return nil
+                } else if self.isOptionHeld {
+                    self.otherKeyPressedWithOption = true
+                }
             }
             return event
         }
         
-        // 3. CoreGraphics Event Tap to intercept physical F8 key (media Play/Pause 16 & standard F8 100)
+        // 3. CoreGraphics Event Tap to intercept physical Option key hold/release and F8
         setupEventTap()
     }
     
     private func setupEventTap() {
-        let mask = (CGEventMask(1) << CGEventType.keyDown.rawValue) | (CGEventMask(1) << 14)
+        let mask = (CGEventMask(1) << CGEventType.keyDown.rawValue) | (CGEventMask(1) << CGEventType.flagsChanged.rawValue) | (CGEventMask(1) << 14)
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
@@ -382,8 +392,19 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
                     return Unmanaged.passUnretained(event)
                 }
                 
-                // Check standard F8 (keycode 100)
+                // Check Option Key (FlagsChanged) Push-to-Talk
+                if type == .flagsChanged {
+                    let isOption = event.flags.contains(.maskAlternate)
+                    WisprFlowService.shared.handleOptionKeyFlagsChanged(isOptionDown: isOption)
+                }
+                
+                // Track if other key is pressed with Option
                 if type == .keyDown {
+                    if WisprFlowService.shared.isOptionHeld {
+                        WisprFlowService.shared.otherKeyPressedWithOption = true
+                    }
+                    
+                    // Check standard F8 (keycode 100)
                     let keycode = event.getIntegerValueField(.keyboardEventKeycode)
                     if keycode == 100 {
                         if WisprFlowService.shared.recordF8Press() {
@@ -426,9 +447,49 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
         CGEvent.tapEnable(tap: tap, enable: true)
     }
     
+    public func handleOptionKeyFlagsChanged(isOptionDown: Bool) {
+        guard isEnabled else { return }
+        
+        if isOptionDown {
+            if !isOptionHeld {
+                isOptionHeld = true
+                optionKeyDownTime = ProcessInfo.processInfo.systemUptime
+                otherKeyPressedWithOption = false
+                DispatchQueue.main.async { [weak self] in
+                    self?.startRecording()
+                }
+            }
+        } else {
+            if isOptionHeld {
+                isOptionHeld = false
+                let duration = ProcessInfo.processInfo.systemUptime - optionKeyDownTime
+                if otherKeyPressedWithOption {
+                    if isListening {
+                        DispatchQueue.main.async { [weak self] in
+                            self?.cancelRecording()
+                        }
+                    }
+                } else if isListening && duration >= 0.15 {
+                    DispatchQueue.main.async { [weak self] in
+                        self?.stopAndTranscribe()
+                    }
+                } else if isListening {
+                    DispatchQueue.main.async { [weak self] in
+                        self?.cancelRecording()
+                    }
+                }
+            }
+        }
+    }
+    
     private func handleNSEvent(_ event: NSEvent) {
-        if isF8Event(event) || isOptionSpaceEvent(event) {
+        if event.type == .flagsChanged {
+            let isOption = event.modifierFlags.contains(.option)
+            handleOptionKeyFlagsChanged(isOptionDown: isOption)
+        } else if isF8Event(event) || isOptionSpaceEvent(event) {
             _ = recordF8Press()
+        } else if isOptionHeld && event.type == .keyDown {
+            otherKeyPressedWithOption = true
         }
     }
     
@@ -669,7 +730,7 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
                 let transcribed = try await self.executeTranscriptionPipeline(audioURL: url, duration: finalDuration)
                 await MainActor.run {
                     self.isProcessing = false
-                    let cleanText = transcribed.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let cleanText = self.postProcessTranscription(transcribed, language: self.language)
                     
                     if !cleanText.isEmpty {
                         self.lastTranscribedText = cleanText
@@ -992,6 +1053,28 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
         }
     }
     
+    public func postProcessTranscription(_ text: String, language: WisprLanguage) -> String {
+        var processed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !processed.isEmpty else { return "" }
+        
+        // 1. Remove filler words if enabled
+        if removeFillerWords {
+            processed = cleanUpFillerWords(processed)
+        }
+        
+        // 2. Fix Hinglish specific phonetic errors & unwanted commas
+        if language == .hinglish || language == .auto {
+            processed = cleanUpHinglishPhoneticsAndCommas(processed)
+        }
+        
+        // 3. Auto-format punctuation and capitalization if enabled
+        if autoFormatPunctuation {
+            processed = cleanUpPunctuationAndFormatting(processed)
+        }
+        
+        return processed.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    
     private func cleanUpFillerWords(_ text: String) -> String {
         var cleaned = text
         let fillers = ["um", "uh", "er", "ah", "matlab", "basically", "you know"]
@@ -1002,6 +1085,78 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
             }
         }
         return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    
+    private func cleanUpHinglishPhoneticsAndCommas(_ text: String) -> String {
+        var result = text
+        
+        // Fix "Mera, Nama Hai" -> "Mera naam hai" or "Mera, nama" -> "Mera naam"
+        let nameFixes: [(String, String)] = [
+            ("(?i)\\bmera,\\s*nama\\s+hai\\b", "Mera naam hai"),
+            ("(?i)\\bmera,\\s*naam\\s+hai\\b", "Mera naam hai"),
+            ("(?i)\\bmera\\s+nama\\s+hai\\b", "Mera naam hai"),
+            ("(?i)\\bmera,\\s*nama\\b", "mera naam"),
+            ("(?i)\\bmera\\s+nama\\b", "mera naam"),
+            ("(?i)\\btera,\\s*nama\\b", "tera naam"),
+            ("(?i)\\btera\\s+nama\\b", "tera naam"),
+            ("(?i)\\bapna,\\s*nama\\b", "apna naam"),
+            ("(?i)\\bapna\\s+nama\\b", "apna naam"),
+            ("(?i)\\buska,\\s*nama\\b", "uska naam"),
+            ("(?i)\\buska\\s+nama\\b", "uska naam"),
+            ("(?i)\\bkya,\\s*nama\\b", "kya naam"),
+            ("(?i)\\bkya\\s+nama\\b", "kya naam"),
+            ("(?i)\\bnama\\s+hai\\b", "naam hai"),
+            ("(?i)\\bnama\\s+kya\\b", "naam kya")
+        ]
+        
+        for (pattern, template) in nameFixes {
+            if let regex = try? NSRegularExpression(pattern: pattern, options: []) {
+                result = regex.stringByReplacingMatches(in: result, options: [], range: NSRange(location: 0, length: result.utf16.count), withTemplate: template)
+            }
+        }
+        
+        // Remove misplaced commas after common Hindi pronouns/conjunctions/words
+        let commaPatterns: [String] = [
+            "(?i)\\b(mera|tera|apna|uska|humara|tumhara|unka|kya|kyun|kaise|kab|kahan|yeh|woh|main|hum|aap|tum|bhi|nahi|nahin|toh|par|aur|ki|ke|ko|se|me|mein)\\s*,\\s*(?=[a-zA-Z0-9])"
+        ]
+        for pattern in commaPatterns {
+            if let regex = try? NSRegularExpression(pattern: pattern, options: []) {
+                result = regex.stringByReplacingMatches(in: result, options: [], range: NSRange(location: 0, length: result.utf16.count), withTemplate: "$1 ")
+            }
+        }
+        
+        return result
+    }
+    
+    private func cleanUpPunctuationAndFormatting(_ text: String) -> String {
+        var result = text
+        
+        // Remove space before punctuation: "word , text" -> "word, text"
+        if let regex = try? NSRegularExpression(pattern: "\\s+([,\\.!\\?;:])", options: []) {
+            result = regex.stringByReplacingMatches(in: result, options: [], range: NSRange(location: 0, length: result.utf16.count), withTemplate: "$1")
+        }
+        
+        // Fix multiple commas: ",," or ", ," -> ","
+        if let regex = try? NSRegularExpression(pattern: ",[\\s,]+", options: []) {
+            result = regex.stringByReplacingMatches(in: result, options: [], range: NSRange(location: 0, length: result.utf16.count), withTemplate: ", ")
+        }
+        
+        // Fix comma before period: ",." -> "."
+        if let regex = try? NSRegularExpression(pattern: ",\\s*\\.", options: []) {
+            result = regex.stringByReplacingMatches(in: result, options: [], range: NSRange(location: 0, length: result.utf16.count), withTemplate: ".")
+        }
+        
+        // Remove trailing commas or colons at the end of the transcription
+        if let regex = try? NSRegularExpression(pattern: "[,;:]+$", options: []) {
+            result = regex.stringByReplacingMatches(in: result, options: [], range: NSRange(location: 0, length: result.utf16.count), withTemplate: "")
+        }
+        
+        // Ensure proper capitalization of the first letter
+        if let first = result.first, first.isLowercase {
+            result = result.prefix(1).uppercased() + result.dropFirst()
+        }
+        
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
     // MARK: - Auto-Paste Emulation (⌘V Keypress & Auto-Return)
