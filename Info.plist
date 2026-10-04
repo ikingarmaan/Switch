@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key>
+    <string>Switch</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.armank.switch</string>
+    <key>CFBundleName</key>
+    <string>Switch</string>
+    <key>CFBundleDisplayName</key>
+    <string>Switch</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>CFBundleIconName</key>
+    <string>AppIcon</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>com.armank.switch</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>switch</string>
+            </array>
+        </dict>
+    </array>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSSupportsAutomaticTermination</key>
+    <false/>
+    <key>NSSupportsSuddenTermination</key>
+    <false/>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Switch requires permission to control System Events to automatically hide and show the menu bar.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>Switch requires camera access for Loom screen recordings and camera preview.</string>
+    <key>NSAudioCaptureUsageDescription</key>
+    <string>Switch requires audio access to provide system volume boost.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Switch requires microphone access to detect chassis double-knocks for instant screenshots and to record voice narration in Loom screen recordings.</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>Switch requires screen recording permission to record your screen for Loom recordings and capture system audio.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Switch requires speech recognition access for Wispr Flow voice dictation to convert speech into text.</string>
+</dict>
+</plist>

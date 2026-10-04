@@ -612,12 +612,12 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
         // Request Microphone access if needed
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .authorized:
-            self.beginAudioEngineCapture()
+            self.checkSpeechAndBegin()
         case .notDetermined:
             AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
                 DispatchQueue.main.async {
                     if granted {
-                        self?.beginAudioEngineCapture()
+                        self?.checkSpeechAndBegin()
                     } else {
                         self?.showMicrophoneAccessAlert()
                     }
@@ -628,6 +628,30 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
         @unknown default:
             break
         }
+    }
+    
+    private func checkSpeechAndBegin() {
+        // If using Apple Native speech recognizer, verify speech recognition permission
+        if engine == .appleNative || (geminiApiKey.isEmpty && groqApiKey.isEmpty && openAIApiKey.isEmpty) {
+            let status = SFSpeechRecognizer.authorizationStatus()
+            if status == .notDetermined {
+                SFSpeechRecognizer.requestAuthorization { [weak self] auth in
+                    DispatchQueue.main.async {
+                        if auth == .authorized {
+                            self?.beginAudioEngineCapture()
+                        } else {
+                            self?.showSpeechRecognitionAccessAlert()
+                        }
+                    }
+                }
+                return
+            } else if status == .denied || status == .restricted {
+                showSpeechRecognitionAccessAlert()
+                return
+            }
+        }
+        
+        self.beginAudioEngineCapture()
     }
     
     private func beginAudioEngineCapture() {
@@ -1098,6 +1122,26 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
     // MARK: - Engine 4: Apple Native Speech Recognizer (100% Offline & Free)
     
     private func transcribeWithAppleSpeech(audioURL: URL, language: WisprLanguage) async throws -> String {
+        let authStatus = SFSpeechRecognizer.authorizationStatus()
+        if authStatus == .notDetermined {
+            let granted = await withCheckedContinuation { continuation in
+                SFSpeechRecognizer.requestAuthorization { status in
+                    continuation.resume(returning: status == .authorized)
+                }
+            }
+            if !granted {
+                await MainActor.run {
+                    self.showSpeechRecognitionAccessAlert()
+                }
+                throw NSError(domain: "WisprFlow", code: 403, userInfo: [NSLocalizedDescriptionKey: "Speech Recognition permission not granted"])
+            }
+        } else if authStatus == .denied || authStatus == .restricted {
+            await MainActor.run {
+                self.showSpeechRecognitionAccessAlert()
+            }
+            throw NSError(domain: "WisprFlow", code: 403, userInfo: [NSLocalizedDescriptionKey: "Speech Recognition permission denied. Please allow Switch in System Settings > Privacy & Security > Speech Recognition."])
+        }
+        
         return try await withCheckedThrowingContinuation { continuation in
             let targetLocale = (language == .hinglish) ? "hi-IN" : language.localeIdentifier
             let recognizer = SFSpeechRecognizer(locale: Locale(identifier: targetLocale)) 
@@ -1444,6 +1488,21 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
         if alert.runModal() == .alertFirstButtonReturn {
             if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
                 NSWorkspace.shared.open(url)
+            }
+        }
+    }
+    
+    private func showSpeechRecognitionAccessAlert() {
+        DispatchQueue.main.async {
+            let alert = NSAlert()
+            alert.messageText = "Speech Recognition Permission Required"
+            alert.informativeText = "Switch needs permission for Speech Recognition to convert your voice into text. Please allow Switch in macOS System Settings > Privacy & Security > Speech Recognition."
+            alert.addButton(withTitle: "Open System Settings")
+            alert.addButton(withTitle: "Cancel")
+            if alert.runModal() == .alertFirstButtonReturn {
+                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_SpeechRecognition") {
+                    NSWorkspace.shared.open(url)
+                }
             }
         }
     }
