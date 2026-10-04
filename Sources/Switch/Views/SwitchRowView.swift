@@ -2061,6 +2061,139 @@ public struct SwitchRowView: View {
                             }
                         }
                     }
+                } else if item.type == .wisprFlow {
+                    let wf = WisprFlowService.shared
+                    HStack(spacing: 6) {
+                        if item.isOn {
+                            Button(action: {
+                                wf.toggleDictation()
+                            }) {
+                                Image(systemName: wf.isListening ? "stop.circle.fill" : "mic.circle.fill")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundColor(wf.isListening ? Color.red : Color(red: 0.65, green: 0.45, blue: 0.98))
+                            }
+                            .buttonStyle(.plain)
+                            .help(wf.isListening ? "Stop & Transcribe" : "Start Voice Dictation")
+                        }
+                        
+                        Menu {
+                            Section("Language") {
+                                ForEach(WisprLanguage.allCases) { lang in
+                                    Button(action: {
+                                        wf.language = lang
+                                    }) {
+                                        HStack {
+                                            Text(lang.title)
+                                            if wf.language == lang {
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            Section("AI Engine") {
+                                ForEach(WisprEngine.allCases) { eng in
+                                    Button(action: {
+                                        wf.engine = eng
+                                    }) {
+                                        HStack {
+                                            Text(eng.title)
+                                            if wf.engine == eng {
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            Section("Options") {
+                                Button(action: {
+                                    wf.autoPaste.toggle()
+                                }) {
+                                    HStack {
+                                        Text("Auto-Paste into Active App (⌘V)")
+                                        if wf.autoPaste {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                                
+                                Button(action: {
+                                    wf.removeFillerWords.toggle()
+                                }) {
+                                    HStack {
+                                        Text("Remove Filler Words (um, uh, matlab)")
+                                        if wf.removeFillerWords {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            Button(action: {
+                                wf.toggleHistoryWindow()
+                            }) {
+                                HStack {
+                                    Text("Dictation History & API Keys ↗")
+                                    Image(systemName: "clock.arrow.circlepath")
+                                }
+                            }
+                            
+                            Button(action: {
+                                wf.toggleDictation()
+                            }) {
+                                HStack {
+                                    Text(wf.isListening ? "Stop Dictation" : "Start Dictating (⌥ Space / F8)")
+                                    Image(systemName: "waveform.and.mic")
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 3) {
+                                Text(item.subtitle ?? wf.language.shortLabel)
+                                    .font(.system(size: 12, weight: item.isOn ? .bold : .medium, design: .rounded))
+                                    .foregroundColor(
+                                        wf.isListening
+                                            ? Color.red
+                                            : (wf.isProcessing
+                                                ? Color(red: 0.85, green: 0.75, blue: 1.0)
+                                                : (item.isOn ? Color(red: 0.65, green: 0.45, blue: 0.98) : Color.gray.opacity(0.85)))
+                                    )
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 8))
+                                    .foregroundColor(Color.gray.opacity(0.6))
+                            }
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                    }
+                    .contextMenu {
+                        Button(action: {
+                            wf.toggleDictation()
+                        }) {
+                            HStack {
+                                Text(wf.isListening ? "Stop Dictating" : "Start Dictating (⌥ Space / F8)")
+                                Image(systemName: "waveform.and.mic")
+                            }
+                        }
+                        
+                        Divider()
+                        
+                        Button(action: {
+                            wf.toggleHistoryWindow()
+                        }) {
+                            HStack {
+                                Text("Open Dictation History & Settings...")
+                                Image(systemName: "clock.arrow.circlepath")
+                            }
+                        }
+                    }
                 } else if let subtitle = item.subtitle, !subtitle.isEmpty {
                     Text(subtitle)
                         .font(.system(size: 12, weight: .regular))

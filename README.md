@@ -66,14 +66,16 @@ Download the pre-compiled, codesigned app bundle directly from GitHub Releases:
 | 📍 **Location Services Toggle** | 1-click **ON / OFF switch for macOS Location Services** with real-time CoreLocation status monitoring (`location.fill` / `location.slash.fill`), instant jump to Privacy & Security settings, and automated master toggle integration. Turning off Location Services blocks all apps, browsers, and background trackers from accessing your physical GPS coordinates. |
 | ⚡️ **Instant RAM & GPU Reset** | Intelligent anti-lag engine that flushes clogged inactive system memory, restores hardware color lookup tables, clears zombie Metal compiler JIT heaps, terminates leaky WebKit GPU processes, flushes QuickLook caches, and features an **Auto-Guard Mode** that automatically clears memory bottlenecks when RAM usage crosses 85%. |
 | 🖼️ **Auto Wallpaper Changer** | Automatically rotates desktop wallpapers every **5 minutes** (or custom intervals: 1m, 5m, 10m, 15m, 30m, 1h, 2h, Daily) with **🔀 Shuffle** or **🔁 Sequential** modes. Easily cycle through **Mac Default Wallpapers** (`/System/Library/Desktop Pictures`), **User Wallpapers** (`~/Pictures/Wallpapers`), All Pictures (`~/Pictures`), or Custom folders, with **1-click Finder shortcuts** to open wallpaper folders instantly and a manual `⏭️ Next Wallpaper Now` trigger button! |
+| 🎙️ **Wispr Flow AI Voice Dictation** | Professional AI voice-to-text dictation engine with **Wispr Flow level accuracy**. Converts voice in **Hinglish** (Hindi + English mixed in clean Romanized Latin script) and **English** with smart filler removal ("um", "uh", "matlab", "basically"), automatic punctuation, live animated waveform floating HUD, global shortcut (**`⌥ Space`** / **`F8`**), and **instant auto-paste (⌘V)** into any active app! Supports Google Gemini 2.0 Flash AI, Groq Whisper Large v3, OpenAI Whisper, and Apple Native offline speech. |
 
 ---
 
 ## 📋 Complete Switches Catalog
 
-Switch packs over **27 native macOS switches** into an ultra-responsive, beautiful interface:
+Switch packs over **28 native macOS switches** into an ultra-responsive, beautiful interface:
 
 ### 🚀 Productivity & Workflow
+- **Wispr Flow AI Voice Dictation**: Voice-to-text dictation with Wispr Flow level accuracy for **Hinglish** and **English**. Removes filler words, formats clean punctuation and capitalization, and auto-pastes directly into your focused app cursor. Features animated glass waveform HUD and global trigger (**`⌥ Space`** or **`F8`**).
 - **Colorful Sticky Notes**: Multi-theme desktop and floating stickies with interactive checkboxes, strikethrough to-do items, text alignment (Left, Center, Right), font sizes, interactive color palette, desktop wallpaper pinning, instant copy, and auto-save.
 - **Clipboard History & Comment Auto-Paste**: Saves up to 50 copied text and image items with drag-and-drop and search. Includes an intelligent **Auto-Paste on Comment Box Click** mode that detects when you click into any comment box, reply area, or text field across Safari, Chrome, Arc, Slack, Notes, and web apps, automatically pasting your latest copied item without needing to press ⌘V! Triggered via global shortcut `F9` or menu bar.
 - **Auto Scroll (Up & Down)**: Automated hands-free scrolling with bounce turnaround, speed controls, and session timers.
@@ -115,9 +117,11 @@ Switch packs over **27 native macOS switches** into an ultra-responsive, beautif
 
 | Shortcut | Action |
 | :--- | :--- |
+| **`⌥ Space`** or **`F8`** | Start / Stop **Wispr Flow AI Voice Dictation** (Auto-Paste) |
 | **`F9`** | Toggle Floating Clipboard Manager HUD |
 | **Double Knock Chassis** | Trigger Hands-Free Screenshot |
 | **`⌘ ,`** | Open Switch Preferences |
+| **`⌘ Q`** | Quit Switch |
 | **`⌘ Q`** | Quit Switch |
 
 ---

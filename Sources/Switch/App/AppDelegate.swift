@@ -49,6 +49,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = SelfControlService.shared
         _ = RAMGPUResetService.shared
         _ = WallpaperChangerService.shared
+        _ = WisprFlowService.shared
         
         setupPopover()
         

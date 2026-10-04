@@ -34,6 +34,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
     case selfControl = "selfControl"
     case locationServices = "locationServices"
     case ramGpuReset = "ramGpuReset"
+    case wisprFlow = "wisprFlow"
     
     public var id: String { rawValue }
     
@@ -69,6 +70,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .selfControl: return "Self Control & Recovery"
         case .locationServices: return "Location Services"
         case .ramGpuReset: return "RAM & GPU Reset"
+        case .wisprFlow: return "Wispr Flow (Voice to Text)"
         }
     }
     
@@ -98,12 +100,13 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .tidyFolders: return "sparkles.rectangle.stack"
         case .adblockDNS: return "shield.fill"
         case .knockScreenshot: return "hand.tap.fill"
-        case .clipboardManager: return "doc.on.clipboard.fill"
-        case .autoScroll: return "arrow.up.and.down.circle.fill"
+        case .clipboardManager: return "doc.on.clipboard"
+        case .autoScroll: return "arrow.up.and.down"
         case .stickyNotes: return "note.text"
-        case .selfControl: return "shield.checkered"
+        case .selfControl: return "shield.lefthalf.filled"
         case .locationServices: return "location.fill"
-        case .ramGpuReset: return "bolt.shield.fill"
+        case .ramGpuReset: return "bolt.fill"
+        case .wisprFlow: return "waveform.and.mic"
         }
     }
     
@@ -311,6 +314,10 @@ public final class SystemControlService: @unchecked Sendable {
         case .ramGpuReset:
             let ram = RAMGPUResetService.shared
             return (ram.isAutoGuardEnabled, ram.statusSubtitle)
+            
+        case .wisprFlow:
+            let wf = WisprFlowService.shared
+            return (wf.isEnabled, wf.statusSubtitle)
         }
     }
     
@@ -473,6 +480,11 @@ public final class SystemControlService: @unchecked Sendable {
                 if isOn {
                     RAMGPUResetService.shared.triggerInstantReset()
                 }
+            }
+            
+        case .wisprFlow:
+            DispatchQueue.main.async {
+                WisprFlowService.shared.setEnabled(isOn)
             }
         }
     }
@@ -666,6 +678,10 @@ public final class SystemControlService: @unchecked Sendable {
         case .ramGpuReset:
             DispatchQueue.main.async {
                 RAMGPUResetService.shared.triggerInstantReset()
+            }
+        case .wisprFlow:
+            DispatchQueue.main.async {
+                WisprFlowService.shared.toggleDictation()
             }
         default:
             break

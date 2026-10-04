@@ -504,10 +504,46 @@ public final class SwitchListViewModel: ObservableObject {
                 self.switches[index].subtitle = wp.statusSubtitle
             }
             .store(in: &cancellables)
+            
+        NotificationCenter.default.publisher(for: .wisprFlowStateDidChange)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] notif in
+                guard let self = self,
+                      let index = self.switches.firstIndex(where: { $0.type == .wisprFlow })
+                else { return }
+                let wf = WisprFlowService.shared
+                let isEnabled = notif.object as? Bool ?? wf.isEnabled
+                self.switches[index].isOn = isEnabled
+                self.switches[index].isLoading = false
+                self.switches[index].subtitle = wf.statusSubtitle
+            }
+            .store(in: &cancellables)
+            
+        NotificationCenter.default.publisher(for: .wisprFlowListeningDidChange)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self = self,
+                      let index = self.switches.firstIndex(where: { $0.type == .wisprFlow })
+                else { return }
+                let wf = WisprFlowService.shared
+                self.switches[index].subtitle = wf.statusSubtitle
+            }
+            .store(in: &cancellables)
+            
+        NotificationCenter.default.publisher(for: .wisprFlowDidTranscribe)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self = self,
+                      let index = self.switches.firstIndex(where: { $0.type == .wisprFlow })
+                else { return }
+                let wf = WisprFlowService.shared
+                self.switches[index].subtitle = wf.statusSubtitle
+            }
+            .store(in: &cancellables)
     }
     
     private func setupSwitches() {
-        // Ordered as shown in user's image + lockKeyboard + cameraPreview + timer + amphetamine + mouseJiggler + autoScroll + googlyEyes + volumeBoost + systemMonitor + loomRecorder + forceQuitApps + autoVPN + tidyFolders + adblockDNS + knockScreenshot + clipboardManager + stickyNotes + selfControl + locationServices + ramGpuReset + autoWallpaper
+        // Ordered as shown in user's image + lockKeyboard + cameraPreview + timer + amphetamine + mouseJiggler + autoScroll + googlyEyes + volumeBoost + systemMonitor + loomRecorder + forceQuitApps + autoVPN + tidyFolders + adblockDNS + knockScreenshot + clipboardManager + stickyNotes + selfControl + locationServices + ramGpuReset + autoWallpaper + wisprFlow
         let initialTypes: [SwitchType] = [
             .hideDesktop,
             .keepAwake,
@@ -536,7 +572,8 @@ public final class SwitchListViewModel: ObservableObject {
             .selfControl,
             .locationServices,
             .ramGpuReset,
-            .autoWallpaper
+            .autoWallpaper,
+            .wisprFlow
         ]
         
         self.switches = initialTypes.map { type in
