@@ -405,9 +405,25 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
                     if type == .keyDown {
                         let flags = event.flags
                         let hasMod = flags.contains(.maskCommand) || flags.contains(.maskControl) || flags.contains(.maskAlternate)
-                        WisprFlowService.shared.handleLKeyDown(hasModifiers: hasMod)
+                        if hasMod {
+                            WisprFlowService.shared.cancelLKeyTimer()
+                            return Unmanaged.passUnretained(event)
+                        }
+                        
+                        // If already dictating or in the middle of 1s hold, suppress repeat 'l' keypresses
+                        if WisprFlowService.shared.isLDictationActive || WisprFlowService.shared.isLKeyHeld {
+                            return nil // consume event so macOS does not type 'lllllll...'
+                        }
+                        
+                        WisprFlowService.shared.handleLKeyDown(hasModifiers: false)
+                        return Unmanaged.passUnretained(event)
                     } else if type == .keyUp {
+                        let wasDictating = WisprFlowService.shared.isLDictationActive
                         WisprFlowService.shared.handleLKeyUp()
+                        if wasDictating {
+                            return nil // consume keyUp so no trailing character is posted
+                        }
+                        return Unmanaged.passUnretained(event)
                     }
                 } else if type == .keyDown {
                     if WisprFlowService.shared.isLKeyHeld && !WisprFlowService.shared.isLDictationActive {
@@ -471,7 +487,18 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
         let workItem = DispatchWorkItem { [weak self] in
             guard let self = self, self.isLKeyHeld, self.isEnabled else { return }
             self.isLDictationActive = true
+            
+            // Delete the initial 'l' character that was typed when L was first pressed
             DispatchQueue.main.async {
+                let src = CGEventSource(stateID: .hidSystemState)
+                let deleteKeyCode: CGKeyCode = 51 // kVK_Delete (Backspace)
+                if let delDown = CGEvent(keyboardEventSource: src, virtualKey: deleteKeyCode, keyDown: true),
+                   let delUp = CGEvent(keyboardEventSource: src, virtualKey: deleteKeyCode, keyDown: false) {
+                    delDown.flags = []
+                    delUp.flags = []
+                    delDown.post(tap: .cghidEventTap)
+                    delUp.post(tap: .cghidEventTap)
+                }
                 self.startRecording()
             }
         }
@@ -870,33 +897,39 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
         switch language {
         case .hinglish:
             promptText = """
-            You are Wispr Flow, the world's most accurate voice dictation engine.
+            You are Wispr Flow, the world's most accurate voice dictation engine specialized in Hinglish (Hindi + English mixed together).
             Transcribe this audio into clean text.
-            CRITICAL RULES FOR HINGLISH:
-            1. The speaker is speaking Hinglish (Hindi + English mixed together).
-            2. Transcribe Hindi words in clean, natural Roman script (English alphabet, e.g. "bhai sun kal meeting 5 baje schedule kar dena aur client ko email bhej do").
-            3. Transcribe English words in correct English spelling.
-            4. Remove filler words ("um", "uh", "matlab", "basically", "you know", "like") and fix stammers.
-            5. Add proper punctuation, capitalization, and formatting.
-            6. Output ONLY the final transcribed text. No introductions, explanations, or quotes.
+            CRITICAL HINGLISH TRANSCRIPTION RULES:
+            1. Transcribe Hindi speech in clean, natural Roman script (English alphabet). NEVER use Devanagari.
+            2. Common examples:
+               - "main nahi karunga" (NOT "kanga")
+               - "main nahi kahunga"
+               - "main seekhunga" (NOT "sikha ga")
+               - "kya haal hai bhai kal milte hain"
+               - "meeting 5 baje schedule kar do"
+               - "client ko email send kar diya"
+            3. Write English technical & colloquial words in standard English spelling (e.g. meeting, schedule, delivery, email, code, bug, website, laptop, call, okay, thanks).
+            4. Remove filler words ("um", "uh", "matlab", "basically", "you know", "like") and stammers.
+            5. Add proper punctuation, Auto-Shift capitalization, and clean formatting.
+            6. Output ONLY the plain transcribed text without markdown formatting, quotes, or explanations.
             """
         case .english:
             promptText = """
             You are Wispr Flow, the world's most accurate voice dictation engine.
             Transcribe this audio into clean English.
             1. Remove filler words ("um", "uh", "you know", "like") and fix stammers.
-            2. Add accurate punctuation, capitalization, paragraphs, and formatting.
-            3. Output ONLY the transcribed text.
+            2. Add accurate punctuation, capitalization, and formatting.
+            3. Output ONLY the raw transcribed text.
             """
         case .hindi:
             promptText = """
             You are Wispr Flow voice dictation engine.
-            Transcribe this audio accurately into Hindi (Devanagari script) with clean punctuation and no filler words. Output ONLY the text.
+            Transcribe this audio accurately into Hindi (Devanagari script) with clean punctuation and no filler words. Output ONLY the raw text.
             """
         case .auto:
             promptText = """
             You are Wispr Flow voice dictation engine.
-            Transcribe this audio accurately in the exact language/mix spoken (if Hinglish, write Hindi words in Roman script and English in English). Add clean punctuation and remove filler words. Output ONLY the text.
+            Transcribe this audio accurately in the exact language/mix spoken (if Hinglish, write Hindi words in Roman script and English in English). Add clean punctuation and remove filler words. Output ONLY the raw text.
             """
         }
         
@@ -917,7 +950,7 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
                 ]
             ],
             "generationConfig": [
-                "temperature": 0.1,
+                "temperature": 0.0,
                 "maxOutputTokens": 2048
             ]
         ]
@@ -974,7 +1007,7 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
         body.append("whisper-large-v3\r\n".data(using: .utf8)!)
         
         // prompt parameter
-        let promptText = (language == .hinglish) ? "Hinglish (Hindi spoken with English words in Roman script) with proper punctuation." : "English dictation with clean punctuation."
+        let promptText = (language == .hinglish) ? "Hinglish (Hindi spoken with English words in Roman script, e.g. Main nahi karunga, seekhunga) with clean punctuation." : "English dictation with clean punctuation."
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Disposition: form-data; name=\"prompt\"\r\n\r\n".data(using: .utf8)!)
         body.append("\(promptText)\r\n".data(using: .utf8)!)
@@ -1035,7 +1068,7 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
         body.append("Content-Disposition: form-data; name=\"model\"\r\n\r\n".data(using: .utf8)!)
         body.append("whisper-1\r\n".data(using: .utf8)!)
         
-        let promptText = (language == .hinglish) ? "Hinglish transcription in Roman script with proper punctuation." : "English dictation."
+        let promptText = (language == .hinglish) ? "Hinglish transcription in Roman script (Main nahi karunga, seekhunga) with proper punctuation." : "English dictation."
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Disposition: form-data; name=\"prompt\"\r\n\r\n".data(using: .utf8)!)
         body.append("\(promptText)\r\n".data(using: .utf8)!)
@@ -1066,7 +1099,10 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
     
     private func transcribeWithAppleSpeech(audioURL: URL, language: WisprLanguage) async throws -> String {
         return try await withCheckedThrowingContinuation { continuation in
-            let recognizer = SFSpeechRecognizer(locale: Locale(identifier: language.localeIdentifier)) ?? SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+            let targetLocale = (language == .hinglish) ? "hi-IN" : language.localeIdentifier
+            let recognizer = SFSpeechRecognizer(locale: Locale(identifier: targetLocale)) 
+                ?? SFSpeechRecognizer(locale: Locale(identifier: language.localeIdentifier)) 
+                ?? SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
             
             guard let recognizer = recognizer, recognizer.isAvailable else {
                 continuation.resume(throwing: NSError(domain: "WisprFlow", code: -9, userInfo: [NSLocalizedDescriptionKey: "Apple Speech Recognizer unavailable"]))
@@ -1082,6 +1118,12 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
                     continuation.resume(throwing: error)
                 } else if let result = result, result.isFinal {
                     var text = result.bestTranscription.formattedString
+                    
+                    // Transliterate any Devanagari Hindi output to clean Romanized Hinglish
+                    if language == .hinglish || language == .auto {
+                        text = DevanagariToRomanTransliterater.transliterate(text)
+                    }
+                    
                     if self.removeFillerWords {
                         text = self.cleanUpFillerWords(text)
                     }
@@ -1095,17 +1137,22 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
         var processed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !processed.isEmpty else { return "" }
         
-        // 1. Remove filler words if enabled
+        // 1. Transliterate Devanagari to Romanized Hinglish if applicable
+        if language == .hinglish || language == .auto {
+            processed = DevanagariToRomanTransliterater.transliterate(processed)
+        }
+        
+        // 2. Remove filler words if enabled
         if removeFillerWords {
             processed = cleanUpFillerWords(processed)
         }
         
-        // 2. Fix Hinglish specific phonetic errors & unwanted commas
+        // 3. Fix Hinglish specific phonetic errors & unwanted commas
         if language == .hinglish || language == .auto {
             processed = cleanUpHinglishPhoneticsAndCommas(processed)
         }
         
-        // 3. Auto-format punctuation and capitalization if enabled
+        // 4. Auto-format punctuation and capitalization if enabled
         if autoFormatPunctuation {
             processed = cleanUpPunctuationAndFormatting(processed)
         }
@@ -1128,8 +1175,31 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
     private func cleanUpHinglishPhoneticsAndCommas(_ text: String) -> String {
         var result = text
         
-        // Fix "Mera, Nama Hai" -> "Mera naam hai" or "Mera, nama" -> "Mera naam"
-        let nameFixes: [(String, String)] = [
+        // Comprehensive phonetic dictionary fixes for acoustic speech recognizer mishearings
+        let phoneticReplacements: [(String, String)] = [
+            ("(?i)\\bmain\\s+nahi\\s+kanga\\b", "Main nahi kahunga"),
+            ("(?i)\\bnahi\\s+kanga\\b", "nahi kahunga"),
+            ("(?i)\\bmain\\s+sikha\\s+ga\\b", "Main seekhunga"),
+            ("(?i)\\bsikha\\s+ga\\b", "seekhega"),
+            ("(?i)\\bsikha\\s+ja\\b", "seekha"),
+            ("(?i)\\bkaruga\\b", "karunga"),
+            ("(?i)\\bkarugi\\b", "karungi"),
+            ("(?i)\\bboluga\\b", "bolunga"),
+            ("(?i)\\bdekhuga\\b", "dekhunga"),
+            ("(?i)\\bsunuga\\b", "sununga"),
+            ("(?i)\\bbatao\\s*ga\\b", "bataunga"),
+            ("(?i)\\bchala\\s*ga\\b", "chalega"),
+            ("(?i)\\bchali\\s*gi\\b", "chalegi"),
+            ("(?i)\\baaye\\s*ga\\b", "aayega"),
+            ("(?i)\\bjaaye\\s*ga\\b", "jaayega"),
+            ("(?i)\\bkare\\s*ga\\b", "karega"),
+            ("(?i)\\bbole\\s*ga\\b", "bolega"),
+            ("(?i)\\bdekhe\\s*ga\\b", "dekhega"),
+            ("(?i)\\bsune\\s*ga\\b", "sunega"),
+            ("(?i)\\bkar\\s+duga\\b", "kar dunga"),
+            ("(?i)\\bde\\s+duga\\b", "de dunga"),
+            ("(?i)\\ble\\s+duga\\b", "le dunga"),
+            ("(?i)\\bbhej\\s+duga\\b", "bhej dunga"),
             ("(?i)\\bmera,\\s*nama\\s+hai\\b", "Mera naam hai"),
             ("(?i)\\bmera,\\s*naam\\s+hai\\b", "Mera naam hai"),
             ("(?i)\\bmera\\s+nama\\s+hai\\b", "Mera naam hai"),
@@ -1147,7 +1217,7 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
             ("(?i)\\bnama\\s+kya\\b", "naam kya")
         ]
         
-        for (pattern, template) in nameFixes {
+        for (pattern, template) in phoneticReplacements {
             if let regex = try? NSRegularExpression(pattern: pattern, options: []) {
                 result = regex.stringByReplacingMatches(in: result, options: [], range: NSRange(location: 0, length: result.utf16.count), withTemplate: template)
             }
@@ -1238,13 +1308,21 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
-    // MARK: - Auto-Paste Emulation (⌘V Keypress & Auto-Return)
+    // MARK: - Auto-Paste Emulation (⌘V Keypress & Optional Return)
     
     public func pasteTranscribedText(_ text: String) {
+        // Strip trailing/leading whitespace and linebreaks so paste does not trigger submit
+        var sanitized = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        while sanitized.hasSuffix("\n") || sanitized.hasSuffix("\r") {
+            sanitized = String(sanitized.dropLast()).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        
+        guard !sanitized.isEmpty else { return }
+        
         // Copy to system clipboard
         let pb = NSPasteboard.general
         pb.clearContents()
-        pb.setString(text, forType: .string)
+        pb.setString(sanitized, forType: .string)
         
         // Emulate ⌘V keystroke via CGEvent into the frontmost app
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
@@ -1263,7 +1341,7 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
             keyDown.post(tap: .cghidEventTap)
             keyUp.post(tap: .cghidEventTap)
             
-            // Automatically click Return / Enter key to submit message/input
+            // Only press Return if the user explicitly enabled autoPressReturn in Settings
             if self.autoPressReturn {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                     let returnKeyCode: CGKeyCode = 36 // kVK_Return
@@ -1368,5 +1446,111 @@ public final class WisprFlowService: NSObject, ObservableObject, @unchecked Send
                 NSWorkspace.shared.open(url)
             }
         }
+    }
+}
+
+// MARK: - Devanagari Hindi to Romanized Hinglish Transliteration Engine
+
+public enum DevanagariToRomanTransliterater {
+    // High-frequency Hindi word dictionary for natural Roman spelling
+    private static let wordMap: [String: String] = [
+        "मैं": "Main", "मै": "Main", "नहीं": "nahi", "नही": "nahi",
+        "करूँगा": "karunga", "करूंगा": "karunga", "करूंगी": "karungi", "करूँगी": "karungi", "करेगा": "karega", "करेंगे": "karenge",
+        "सीखूँगा": "seekhunga", "सीखूंगा": "seekhunga", "सीखेंगे": "seekhenge", "सीखा": "seekha", "सीखेगा": "seekhega",
+        "कहूँगा": "kahunga", "कहुंगा": "kahunga", "कहा": "kaha", "कहेगा": "kahega", "कहेंगे": "kahenge",
+        "जाऊँगा": "jaunga", "जाऊंगा": "jaunga", "जाएंगे": "jaenge", "जाएगा": "jaayega", "गया": "gaya", "गए": "gaye",
+        "आऊँगा": "aaunga", "आऊंगा": "aaunga", "आएंगे": "aayenge", "आएगा": "aayega", "आया": "aaya", "आए": "aaye",
+        "बोलूँगा": "bolunga", "बोलूंगा": "bolunga", "बोला": "bola", "बोलेंगे": "bolenge",
+        "देखूँगा": "dekhunga", "देखूंगा": "dekhunga", "देखा": "dekha", "देखेंगे": "dekhenge",
+        "सुनूँगा": "sununga", "सुनूंगा": "sununga", "सुना": "suna", "सुनेंगे": "sunenge",
+        "बताऊँगा": "bataunga", "बताऊंगा": "bataunga", "बताया": "bataya", "बताएंगे": "bataenge",
+        "होगा": "hoga", "होगी": "hogi", "होंगे": "honge", "हुआ": "hua", "हुई": "hui", "हुए": "hue",
+        "है": "hai", "हैं": "hain", "हो": "ho", "हूं": "hoon", "हूँ": "hoon",
+        "था": "tha", "थी": "thi", "थे": "the",
+        "क्या": "kya", "क्यों": "kyun", "क्यूँ": "kyun", "क्यूं": "kyun", "कैसे": "kaise", "कब": "kab", "कहाँ": "kahan", "किधर": "kidhar",
+        "भाई": "bhai", "यार": "yaar", "दोस्त": "dost", "अच्छा": "achha", "अच्छी": "achhi", "ठीक": "theek",
+        "बहुत": "bahut", "थोड़ा": "thoda", "ज्यादा": "zyada", "कम": "kam",
+        "आप": "aap", "तुम": "tum", "हम": "hum", "वो": "woh", "वह": "woh", "यह": "yeh", "ये": "ye", "वे": "ve",
+        "मेरा": "mera", "मेरी": "meri", "मेरे": "mere", "तेरा": "tera", "तेरी": "teri", "तेरे": "tere",
+        "हमारा": "humara", "हमारी": "humari", "हमारे": "humare", "तुम्हारा": "tumhara", "तुम्हारी": "tumhari", "तुम्हारे": "tumhare",
+        "उसका": "uska", "उसकी": "uski", "उसके": "uske", "उनका": "unka", "उनकी": "unki", "उनके": "unke",
+        "इसका": "iska", "इसकी": "iski", "इसके": "iske", "इनका": "inka", "इनकी": "inki", "इनके": "inke",
+        "कल": "kal", "आज": "aaj", "परसों": "parson", "सुबह": "subah", "शाम": "shaam", "रात": "raat", "दिन": "din",
+        "समय": "samay", "काम": "kaam", "बात": "baat", "घर": "ghar", "ऑफिस": "office", "फोन": "phone",
+        "पैसा": "paisa", "पैसे": "paise", "रुपये": "rupaye", "गाड़ी": "gaadi", "पानी": "paani", "खाना": "khaana",
+        "और": "aur", "लेकिन": "lekin", "पर": "par", "अगर": "agar", "तो": "toh", "भी": "bhi", "तक": "tak",
+        "के": "ke", "की": "ki", "का": "ka", "को": "ko", "से": "se", "में": "mein", "पे": "pe"
+    ]
+    
+    public static func transliterate(_ text: String) -> String {
+        guard text.unicodeScalars.contains(where: { (0x0900...0x097F).contains($0.value) }) else {
+            return text
+        }
+        
+        var result = text
+        for (devanagari, roman) in wordMap {
+            result = result.replacingOccurrences(of: devanagari, with: roman)
+        }
+        
+        if result.unicodeScalars.contains(where: { (0x0900...0x097F).contains($0.value) }) {
+            result = transliterateCharByChar(result)
+        }
+        
+        return result
+    }
+    
+    private static func transliterateCharByChar(_ input: String) -> String {
+        let vowels: [Character: String] = [
+            "अ": "a", "आ": "aa", "इ": "i", "ई": "ee", "उ": "u", "ऊ": "oo",
+            "ऋ": "ri", "ए": "e", "ऐ": "ai", "ओ": "o", "औ": "au"
+        ]
+        let matras: [Character: String] = [
+            "ा": "a", "ि": "i", "ी": "i", "ु": "u", "ू": "u", "ृ": "ri",
+            "े": "e", "ै": "ai", "ो": "o", "ौ": "au"
+        ]
+        let consonants: [Character: String] = [
+            "क": "k", "ख": "kh", "ग": "g", "घ": "gh", "ङ": "ng",
+            "च": "ch", "छ": "chh", "ज": "j", "झ": "jh", "ञ": "ny",
+            "ट": "t", "ठ": "th", "ड": "d", "ढ": "dh", "ण": "n",
+            "त": "t", "थ": "th", "द": "d", "ध": "dh", "न": "n",
+            "प": "p", "फ": "ph", "ब": "b", "भ": "bh", "म": "m",
+            "य": "y", "र": "r", "ल": "l", "व": "v", "श": "sh", "ष": "sh", "स": "s", "ह": "h",
+            "क़": "q", "ख़": "kh", "ग़": "gh", "ज़": "z", "ड़": "r", "ढ़": "rh", "फ़": "f"
+        ]
+        
+        var out = ""
+        let chars = Array(input)
+        var i = 0
+        while i < chars.count {
+            let c = chars[i]
+            let nextC = (i + 1 < chars.count) ? chars[i + 1] : nil
+            
+            if let vow = vowels[c] {
+                out += vow
+            } else if let mat = matras[c] {
+                out += mat
+            } else if c == "्" {
+                // Halant/Virama suppresses inherent 'a'
+            } else if c == "ं" || c == "ँ" {
+                out += "n"
+            } else if c == "ः" {
+                out += "h"
+            } else if c == "़" {
+                // Nukta
+            } else if let con = consonants[c] {
+                out += con
+                if let next = nextC {
+                    if next == "्" || matras[next] != nil || next == " " || next == "\n" || next == "." || next == "," {
+                        // Suppressed
+                    } else if consonants[next] != nil || vowels[next] != nil {
+                        out += "a"
+                    }
+                }
+            } else {
+                out.append(c)
+            }
+            i += 1
+        }
+        return out
     }
 }
