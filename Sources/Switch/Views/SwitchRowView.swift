@@ -2540,21 +2540,7 @@ public struct SwitchRowView: View {
                                 }
                             }
                             
-                            Section("Finder Right-Click Trigger") {
-                                ForEach(FinderRightClickTrigger.allCases) { trig in
-                                    Button(action: {
-                                        mb.setFinderRightClickTrigger(trig)
-                                    }) {
-                                        HStack {
-                                            Text(trig.label)
-                                            if mb.finderRightClickTrigger == trig {
-                                                Image(systemName: "checkmark")
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            
+
                             Section("Mouse Features") {
                                 Button(action: {
                                     mb.setInvertScrollWheel(!mb.invertScrollWheel)

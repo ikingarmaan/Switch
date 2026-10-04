@@ -9,23 +9,7 @@ public extension Notification.Name {
     static let mouseBoostProHUDDidChange = Notification.Name("SwitchMouseBoostProHUDDidChange")
 }
 
-public enum FinderRightClickTrigger: String, CaseIterable, Identifiable, Codable, Sendable {
-    case all = "all"
-    case alwaysInFinder = "alwaysInFinder"
-    case optionRightClick = "optionRightClick"
-    case middleClick = "middleClick"
-    
-    public var id: String { rawValue }
-    
-    public var label: String {
-        switch self {
-        case .all: return "Right-Click in Finder & ⌥+Right-Click (Recommended)"
-        case .alwaysInFinder: return "Right-Click in Finder / Desktop"
-        case .optionRightClick: return "Option (⌥) + Right-Click"
-        case .middleClick: return "Middle-Click (Wheel Click)"
-        }
-    }
-}
+
 
 public enum MouseBoostMiddleClickAction: String, CaseIterable, Identifiable, Codable, Sendable {
     case superMenu = "superMenu"
@@ -187,9 +171,6 @@ public final class MouseBoostProService: NSObject, ObservableObject, @unchecked 
     @Published public var invertScrollWheel: Bool = false {
         didSet { UserDefaults.standard.set(invertScrollWheel, forKey: keyInvertScrollWheel) }
     }
-    @Published public var finderRightClickTrigger: FinderRightClickTrigger = .all {
-        didSet { UserDefaults.standard.set(finderRightClickTrigger.rawValue, forKey: keyFinderRightClickTrigger) }
-    }
     @Published public var soundFeedback: Bool = true {
         didSet { UserDefaults.standard.set(soundFeedback, forKey: keySoundFeedback) }
     }
@@ -203,7 +184,7 @@ public final class MouseBoostProService: NSObject, ObservableObject, @unchecked 
     
     public var statusSubtitle: String? {
         if isEnabled {
-            return "\(scrollSpeed.shortLabel) Scroll · Right-Click HUD"
+            return "\(scrollSpeed.shortLabel) Turbo Scroll"
         }
         return nil
     }
@@ -252,13 +233,6 @@ public final class MouseBoostProService: NSObject, ObservableObject, @unchecked 
             self.invertScrollWheel = defaults.bool(forKey: keyInvertScrollWheel)
         } else {
             self.invertScrollWheel = false
-        }
-        
-        if let savedTrigger = defaults.string(forKey: keyFinderRightClickTrigger),
-           let trigger = FinderRightClickTrigger(rawValue: savedTrigger) {
-            self.finderRightClickTrigger = trigger
-        } else {
-            self.finderRightClickTrigger = .all
         }
         
         if defaults.object(forKey: keySoundFeedback) != nil {
@@ -315,11 +289,6 @@ public final class MouseBoostProService: NSObject, ObservableObject, @unchecked 
         NotificationCenter.default.post(name: .mouseBoostProStateDidChange, object: isEnabled)
     }
     
-    public func setFinderRightClickTrigger(_ trigger: FinderRightClickTrigger) {
-        self.finderRightClickTrigger = trigger
-        NotificationCenter.default.post(name: .mouseBoostProStateDidChange, object: isEnabled)
-    }
-    
     public func setSoundFeedback(_ sound: Bool) {
         self.soundFeedback = sound
         NotificationCenter.default.post(name: .mouseBoostProStateDidChange, object: isEnabled)
@@ -346,8 +315,7 @@ public final class MouseBoostProService: NSObject, ObservableObject, @unchecked 
         stopEventTap()
         
         let mask = (1 << CGEventType.otherMouseDown.rawValue) |
-                   (1 << CGEventType.scrollWheel.rawValue) |
-                   (1 << CGEventType.rightMouseDown.rawValue)
+                   (1 << CGEventType.scrollWheel.rawValue)
         
         let observer = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
         
@@ -446,35 +414,6 @@ public final class MouseBoostProService: NSObject, ObservableObject, @unchecked 
                 if ptDeltaY != 0 {
                     let newPtY = Int64(Double(ptDeltaY) * multiplier * (invertScrollWheel ? -1.0 : 1.0))
                     event.setIntegerValueField(.scrollWheelEventPointDeltaAxis1, value: newPtY)
-                }
-            }
-        }
-        
-        // 3. Handle Right Click in Finder & Desktop -> Super Action HUD
-        if type == .rightMouseDown {
-            let isOptionPressed = event.flags.contains(.maskAlternate)
-            let frontApp = NSWorkspace.shared.frontmostApplication
-            let isFinderOrDesktop = (frontApp?.bundleIdentifier == "com.apple.finder" || frontApp?.bundleIdentifier == "com.apple.dock")
-            
-            let shouldTrigger: Bool = {
-                switch self.finderRightClickTrigger {
-                case .all:
-                    return isOptionPressed || isFinderOrDesktop
-                case .alwaysInFinder:
-                    return isFinderOrDesktop
-                case .optionRightClick:
-                    return isOptionPressed
-                case .middleClick:
-                    return false
-                }
-            }()
-            
-            if shouldTrigger {
-                DispatchQueue.main.async {
-                    self.showSuperHUD(at: mouseLocation)
-                }
-                if isOptionPressed {
-                    return nil // Consume Option+Right-click so macOS standard context menu doesn't interfere
                 }
             }
         }

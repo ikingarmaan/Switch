@@ -22,10 +22,6 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         // Run as menu bar accessory app without Dock icon
         NSApp.setActivationPolicy(.accessory)
         
-        // Register native macOS Finder contextual services provider
-        NSApp.servicesProvider = FinderServicesProvider.shared
-        NSUpdateDynamicServices()
-        
         setupMainMenu()
         setupStatusItem()
         setupNotificationObservers()
