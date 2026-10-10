@@ -2658,6 +2658,105 @@ public struct SwitchRowView: View {
                             }
                         }
                     }
+                } else if item.type == .mControl {
+                    let mc = MControlService.shared
+                    HStack(spacing: 6) {
+                        Menu {
+                            Button(action: {
+                                mc.toggle()
+                            }) {
+                                HStack {
+                                    Text(mc.isRunning ? "Stop MControl Server" : "Start MControl Server")
+                                    Image(systemName: mc.isRunning ? "stop.fill" : "play.fill")
+                                }
+                            }
+                            
+                            if mc.isRunning {
+                                Divider()
+                                
+                                Button(action: {
+                                    mc.openInBrowser()
+                                }) {
+                                    HStack {
+                                        Text("Open Web Remote (\(mc.localIP):\(mc.serverPort))")
+                                        Image(systemName: "safari")
+                                    }
+                                }
+                                
+                                Button(action: {
+                                    mc.copyRemoteURL()
+                                }) {
+                                    HStack {
+                                        Text("Copy Remote URL for Phone")
+                                        Image(systemName: "doc.on.doc")
+                                    }
+                                }
+                                
+                                Button(action: {
+                                    mc.restartServer()
+                                }) {
+                                    HStack {
+                                        Text("Restart Server")
+                                        Image(systemName: "arrow.clockwise")
+                                    }
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            Button(action: {
+                                mc.openProjectFolder()
+                            }) {
+                                HStack {
+                                    Text("Open Project Directory...")
+                                    Image(systemName: "folder")
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 3) {
+                                Text(item.subtitle ?? mc.statusSubtitle)
+                                    .font(.system(size: 12, weight: item.isOn ? .bold : .medium, design: .rounded))
+                                    .foregroundColor(item.isOn ? Color(red: 0.25, green: 0.75, blue: 1.0) : Color.gray.opacity(0.85))
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 8))
+                                    .foregroundColor(Color.gray.opacity(0.6))
+                            }
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                    }
+                    .contextMenu {
+                        Button(action: {
+                            mc.toggle()
+                        }) {
+                            HStack {
+                                Text(mc.isRunning ? "Stop MControl Server" : "Start MControl Server")
+                                Image(systemName: mc.isRunning ? "stop.fill" : "play.fill")
+                            }
+                        }
+                        
+                        if mc.isRunning {
+                            Divider()
+                            
+                            Button(action: {
+                                mc.openInBrowser()
+                            }) {
+                                HStack {
+                                    Text("Open Web Remote")
+                                    Image(systemName: "safari")
+                                }
+                            }
+                            
+                            Button(action: {
+                                mc.copyRemoteURL()
+                            }) {
+                                HStack {
+                                    Text("Copy Remote URL")
+                                    Image(systemName: "doc.on.doc")
+                                }
+                            }
+                        }
+                    }
                 } else if let subtitle = item.subtitle, !subtitle.isEmpty {
                     Text(subtitle)
                         .font(.system(size: 12, weight: .regular))
