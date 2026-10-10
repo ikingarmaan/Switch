@@ -46,7 +46,6 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = KnockScreenshotService.shared
         _ = ClipboardService.shared
         _ = StickyNotesService.shared
-        _ = SelfControlService.shared
         _ = RAMGPUResetService.shared
         _ = WallpaperChangerService.shared
         _ = WisprFlowService.shared
@@ -107,8 +106,6 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             let host = (url.host ?? url.path).lowercased()
             if host.contains("clipboard") {
                 ClipboardService.shared.toggleWindow()
-            } else if host.contains("control") || host.contains("selfcontrol") || host.contains("clarity") || host.contains("recovery") {
-                SelfControlWindowManager.shared.showWindow()
             } else {
                 if let button = statusItem?.button {
                     showPopover(button)

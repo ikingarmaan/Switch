@@ -402,19 +402,6 @@ public final class SwitchListViewModel: ObservableObject {
             }
             .store(in: &cancellables)
             
-        NotificationCenter.default.publisher(for: .selfControlStateDidChange)
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                guard let self = self,
-                      let index = self.switches.firstIndex(where: { $0.type == .selfControl })
-                else { return }
-                let sc = SelfControlService.shared
-                self.switches[index].isOn = sc.isShieldActive
-                self.switches[index].isLoading = false
-                self.switches[index].subtitle = sc.statusSubtitle
-            }
-            .store(in: &cancellables)
-            
         NotificationCenter.default.publisher(for: .locationServicesStateDidChange)
             .receive(on: RunLoop.main)
             .sink { [weak self] notif in
@@ -439,20 +426,6 @@ public final class SwitchListViewModel: ObservableObject {
                 self.switches[index].isOn = ns.isEnabled()
                 self.switches[index].isLoading = false
                 self.switches[index].subtitle = ns.subtitle
-            }
-            .store(in: &cancellables)
-            
-        NotificationCenter.default.publisher(for: .selfControlTick)
-            .receive(on: RunLoop.main)
-            .sink { [weak self] notif in
-                guard let self = self,
-                      let index = self.switches.firstIndex(where: { $0.type == .selfControl })
-                else { return }
-                if let sub = notif.object as? String {
-                    self.switches[index].subtitle = sub
-                } else {
-                    self.switches[index].subtitle = SelfControlService.shared.statusSubtitle
-                }
             }
             .store(in: &cancellables)
             
@@ -595,7 +568,7 @@ public final class SwitchListViewModel: ObservableObject {
     }
     
     private func setupSwitches() {
-        // Ordered as shown in user's image + lockKeyboard + cameraPreview + timer + amphetamine + mouseJiggler + autoScroll + googlyEyes + volumeBoost + systemMonitor + loomRecorder + forceQuitApps + autoVPN + tidyFolders + adblockDNS + knockScreenshot + clipboardManager + stickyNotes + selfControl + locationServices + ramGpuReset + cleanMacCache + autoWallpaper + wisprFlow + dockDoor + mouseBoostPro
+        // Ordered as shown in user's image + lockKeyboard + cameraPreview + timer + amphetamine + mouseJiggler + autoScroll + googlyEyes + volumeBoost + systemMonitor + loomRecorder + forceQuitApps + autoVPN + tidyFolders + adblockDNS + knockScreenshot + clipboardManager + stickyNotes + locationServices + ramGpuReset + cleanMacCache + autoWallpaper + wisprFlow + dockDoor + mouseBoostPro
         let initialTypes: [SwitchType] = [
             .hideDesktop,
             .keepAwake,
@@ -621,7 +594,6 @@ public final class SwitchListViewModel: ObservableObject {
             .knockScreenshot,
             .clipboardManager,
             .stickyNotes,
-            .selfControl,
             .locationServices,
             .ramGpuReset,
             .cleanMacCache,

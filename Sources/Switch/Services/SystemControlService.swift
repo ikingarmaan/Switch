@@ -31,7 +31,6 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
     case clipboardManager = "clipboardManager"
     case autoScroll = "autoScroll"
     case stickyNotes = "stickyNotes"
-    case selfControl = "selfControl"
     case locationServices = "locationServices"
     case ramGpuReset = "ramGpuReset"
     case cleanMacCache = "cleanMacCache"
@@ -70,7 +69,6 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .clipboardManager: return "Clipboard History"
         case .autoScroll: return "Auto Scroll"
         case .stickyNotes: return "Sticky Notes"
-        case .selfControl: return "Self Control & Recovery"
         case .locationServices: return "Location Services"
         case .ramGpuReset: return "RAM & GPU Reset"
         case .cleanMacCache: return "Mac Cleaner"
@@ -109,7 +107,6 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .clipboardManager: return "doc.on.clipboard"
         case .autoScroll: return "arrow.up.and.down"
         case .stickyNotes: return "note.text"
-        case .selfControl: return "shield.lefthalf.filled"
         case .locationServices: return "location.fill"
         case .ramGpuReset: return "bolt.fill"
         case .cleanMacCache: return "trash.circle.fill"
@@ -311,10 +308,6 @@ public final class SystemControlService: @unchecked Sendable {
             let notes = StickyNotesService.shared
             return (notes.isVisible, notes.statusSubtitle)
             
-        case .selfControl:
-            let sc = SelfControlService.shared
-            return (sc.isShieldActive, sc.statusSubtitle)
-            
         case .locationServices:
             let loc = LocationService.shared
             _ = loc.checkStatus()
@@ -485,11 +478,6 @@ public final class SystemControlService: @unchecked Sendable {
         case .stickyNotes:
             DispatchQueue.main.async {
                 StickyNotesService.shared.setVisibility(isOn)
-            }
-            
-        case .selfControl:
-            DispatchQueue.main.async {
-                SelfControlService.shared.setShield(isOn)
             }
             
         case .locationServices:
@@ -709,10 +697,6 @@ public final class SystemControlService: @unchecked Sendable {
         case .clipboardManager:
             DispatchQueue.main.async {
                 ClipboardService.shared.toggleWindow()
-            }
-        case .selfControl:
-            DispatchQueue.main.async {
-                SelfControlWindowManager.shared.showWindow()
             }
         case .ramGpuReset:
             DispatchQueue.main.async {
