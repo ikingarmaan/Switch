@@ -37,6 +37,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
     case wisprFlow = "wisprFlow"
     case dockDoor = "dockDoor"
     case mouseBoostPro = "mouseBoostPro"
+    case ultraPowerSave = "ultraPowerSave"
     
     public var id: String { rawValue }
     
@@ -75,6 +76,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .wisprFlow: return "Wispr Flow (Voice to Text)"
         case .dockDoor: return "DockDoor (Window Previews)"
         case .mouseBoostPro: return "MouseBoost Pro (Steroids)"
+        case .ultraPowerSave: return "Ultra Power Saver"
         }
     }
     
@@ -113,6 +115,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .wisprFlow: return "waveform.and.mic"
         case .dockDoor: return "macwindow.on.rectangle"
         case .mouseBoostPro: return "cursorarrow.rays"
+        case .ultraPowerSave: return "bolt.batteryblock.fill"
         }
     }
     
@@ -332,6 +335,10 @@ public final class SystemControlService: @unchecked Sendable {
         case .mouseBoostPro:
             let mb = MouseBoostProService.shared
             return (mb.isEnabled, mb.statusSubtitle)
+            
+        case .ultraPowerSave:
+            let ps = UltraPowerSaveService.shared
+            return (ps.isUltraPowerSaveActive, ps.statusSubtitle)
         }
     }
     
@@ -512,6 +519,11 @@ public final class SystemControlService: @unchecked Sendable {
         case .mouseBoostPro:
             DispatchQueue.main.async {
                 MouseBoostProService.shared.setEnabled(isOn)
+            }
+            
+        case .ultraPowerSave:
+            DispatchQueue.main.async {
+                UltraPowerSaveService.shared.setEnabled(isOn)
             }
         }
     }
@@ -709,6 +721,10 @@ public final class SystemControlService: @unchecked Sendable {
         case .wisprFlow:
             DispatchQueue.main.async {
                 WisprFlowService.shared.toggleDictation()
+            }
+        case .ultraPowerSave:
+            DispatchQueue.main.async {
+                UltraPowerSaveService.shared.toggle()
             }
         default:
             break

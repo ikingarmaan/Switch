@@ -2554,6 +2554,110 @@ public struct SwitchRowView: View {
                             }
                         }
                     }
+                } else if item.type == .ultraPowerSave {
+                    let ps = UltraPowerSaveService.shared
+                    HStack(spacing: 6) {
+                        Menu {
+                            Button(action: {
+                                ps.toggle()
+                            }) {
+                                HStack {
+                                    Text(ps.isUltraPowerSaveActive ? "Turn Off Ultra Power Saver" : "Turn On Ultra Power Saver")
+                                    Image(systemName: ps.isUltraPowerSaveActive ? "bolt.batteryblock" : "bolt.batteryblock.fill")
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            Section("💡 Target Eco Brightness") {
+                                ForEach([20, 30, 40, 50], id: \.self) { pct in
+                                    Button(action: {
+                                        ps.targetBrightnessPercent = pct
+                                    }) {
+                                        HStack {
+                                            Text("\(pct)% Brightness\(pct == 30 ? " (Recommended)" : "")")
+                                            if ps.targetBrightnessPercent == pct {
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            Section("💤 Display Sleep Timeout") {
+                                ForEach([1, 2, 5], id: \.self) { mins in
+                                    Button(action: {
+                                        ps.displaySleepMinutes = mins
+                                    }) {
+                                        HStack {
+                                            Text("\(mins) Minute\(mins > 1 ? "s" : "")\(mins == 2 ? " (Recommended)" : "")")
+                                            if ps.displaySleepMinutes == mins {
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            Button(action: {
+                                ps.autoDarkModeEnabled.toggle()
+                            }) {
+                                HStack {
+                                    Text("Auto Dark Mode on Eco")
+                                    if ps.autoDarkModeEnabled {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            Button(action: {
+                                ps.openBatterySettings()
+                            }) {
+                                HStack {
+                                    Text("Open Battery Settings...")
+                                    Image(systemName: "gearshape")
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 3) {
+                                Text(item.subtitle ?? ps.statusSubtitle)
+                                    .font(.system(size: 12, weight: item.isOn ? .bold : .medium, design: .rounded))
+                                    .foregroundColor(item.isOn ? Color(red: 0.35, green: 0.85, blue: 0.50) : Color.gray.opacity(0.85))
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 8))
+                                    .foregroundColor(Color.gray.opacity(0.6))
+                            }
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                    }
+                    .contextMenu {
+                        Button(action: {
+                            ps.toggle()
+                        }) {
+                            HStack {
+                                Text(ps.isUltraPowerSaveActive ? "Turn Off Ultra Power Saver" : "Turn On Ultra Power Saver")
+                                Image(systemName: ps.isUltraPowerSaveActive ? "bolt.batteryblock" : "bolt.batteryblock.fill")
+                            }
+                        }
+                        
+                        Divider()
+                        
+                        Button(action: {
+                            ps.openBatterySettings()
+                        }) {
+                            HStack {
+                                Text("Open Battery Settings...")
+                                Image(systemName: "gearshape")
+                            }
+                        }
+                    }
                 } else if let subtitle = item.subtitle, !subtitle.isEmpty {
                     Text(subtitle)
                         .font(.system(size: 12, weight: .regular))

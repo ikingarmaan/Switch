@@ -51,6 +51,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = WisprFlowService.shared
         _ = DockDoorService.shared
         _ = MouseBoostProService.shared
+        _ = UltraPowerSaveService.shared
         
         setupPopover()
         
