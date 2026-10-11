@@ -53,6 +53,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = MouseBoostProService.shared
         _ = UltraPowerSaveService.shared
         _ = MControlService.shared
+        _ = TextGrabberService.shared
         
         setupPopover()
         

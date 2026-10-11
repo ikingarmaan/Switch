@@ -593,10 +593,24 @@ public final class SwitchListViewModel: ObservableObject {
                 self.switches[index].subtitle = mc.statusSubtitle
             }
             .store(in: &cancellables)
+            
+        NotificationCenter.default.publisher(for: .textGrabberStateDidChange)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] notif in
+                guard let self = self,
+                      let index = self.switches.firstIndex(where: { $0.type == .textGrabber })
+                else { return }
+                let tg = TextGrabberService.shared
+                let isEnabled = notif.object as? Bool ?? tg.isEnabled
+                self.switches[index].isOn = isEnabled
+                self.switches[index].isLoading = false
+                self.switches[index].subtitle = tg.statusSubtitle
+            }
+            .store(in: &cancellables)
     }
     
     private func setupSwitches() {
-        // Ordered as shown in user's image + lockKeyboard + cameraPreview + timer + amphetamine + mouseJiggler + autoScroll + googlyEyes + volumeBoost + systemMonitor + loomRecorder + forceQuitApps + autoVPN + tidyFolders + adblockDNS + knockScreenshot + clipboardManager + stickyNotes + locationServices + ramGpuReset + cleanMacCache + autoWallpaper + wisprFlow + dockDoor + mouseBoostPro + ultraPowerSave + mControl
+        // Ordered as shown in user's image + lockKeyboard + cameraPreview + timer + amphetamine + mouseJiggler + autoScroll + googlyEyes + volumeBoost + systemMonitor + loomRecorder + forceQuitApps + autoVPN + tidyFolders + adblockDNS + knockScreenshot + clipboardManager + stickyNotes + locationServices + ramGpuReset + cleanMacCache + autoWallpaper + wisprFlow + dockDoor + mouseBoostPro + ultraPowerSave + mControl + textGrabber
         let initialTypes: [SwitchType] = [
             .hideDesktop,
             .keepAwake,
@@ -630,7 +644,8 @@ public final class SwitchListViewModel: ObservableObject {
             .dockDoor,
             .mouseBoostPro,
             .ultraPowerSave,
-            .mControl
+            .mControl,
+            .textGrabber
         ]
         
         self.switches = initialTypes.map { type in

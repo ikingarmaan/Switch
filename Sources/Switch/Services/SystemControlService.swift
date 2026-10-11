@@ -39,6 +39,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
     case mouseBoostPro = "mouseBoostPro"
     case ultraPowerSave = "ultraPowerSave"
     case mControl = "mControl"
+    case textGrabber = "textGrabber"
     
     public var id: String { rawValue }
     
@@ -79,6 +80,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .mouseBoostPro: return "MouseBoost Pro (Steroids)"
         case .ultraPowerSave: return "Ultra Power Saver"
         case .mControl: return "MControl"
+        case .textGrabber: return "Live Text (Copy Anywhere)"
         }
     }
     
@@ -119,6 +121,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .mouseBoostPro: return "cursorarrow.rays"
         case .ultraPowerSave: return "bolt.batteryblock.fill"
         case .mControl: return "iphone.and.arrow.forward"
+        case .textGrabber: return "text.viewfinder"
         }
     }
     
@@ -346,6 +349,10 @@ public final class SystemControlService: @unchecked Sendable {
         case .mControl:
             let mc = MControlService.shared
             return (mc.isRunning, mc.statusSubtitle)
+            
+        case .textGrabber:
+            let tg = TextGrabberService.shared
+            return (tg.isEnabled, tg.statusSubtitle)
         }
     }
     
@@ -540,6 +547,11 @@ public final class SystemControlService: @unchecked Sendable {
                 } else {
                     MControlService.shared.stopServer()
                 }
+            }
+            
+        case .textGrabber:
+            DispatchQueue.main.async {
+                TextGrabberService.shared.setEnabled(isOn)
             }
         }
     }
@@ -745,6 +757,10 @@ public final class SystemControlService: @unchecked Sendable {
         case .mControl:
             DispatchQueue.main.async {
                 MControlService.shared.toggle()
+            }
+        case .textGrabber:
+            DispatchQueue.main.async {
+                TextGrabberService.shared.snipAreaAndCopyText()
             }
         default:
             break

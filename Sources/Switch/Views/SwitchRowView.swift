@@ -2757,6 +2757,111 @@ public struct SwitchRowView: View {
                             }
                         }
                     }
+                } else if item.type == .textGrabber {
+                    let tg = TextGrabberService.shared
+                    HStack(spacing: 6) {
+                        Button(action: {
+                            tg.snipAreaAndCopyText()
+                        }) {
+                            Image(systemName: "viewfinder")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(Color(red: 0.25, green: 0.75, blue: 1.0))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Snip Screen & Copy Text (⌘⌥C)")
+                        
+                        Menu {
+                            Button(action: {
+                                tg.snipAreaAndCopyText()
+                            }) {
+                                HStack {
+                                    Text("Snip Area & Copy Text (⌘⌥C)")
+                                    Image(systemName: "text.viewfinder")
+                                }
+                            }
+                            
+                            Button(action: {
+                                tg.snipFullScreenAndCopyText()
+                            }) {
+                                HStack {
+                                    Text("Copy Text from Full Screen")
+                                    Image(systemName: "display")
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            Button(action: {
+                                tg.singleLineMode.toggle()
+                            }) {
+                                HStack {
+                                    Text("Merge Lines (Single Line Mode)")
+                                    if tg.singleLineMode {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                            
+                            if !tg.recentSnippets.isEmpty {
+                                Divider()
+                                
+                                Section("📋 Recent Copied Text") {
+                                    ForEach(Array(tg.recentSnippets.prefix(5).enumerated()), id: \.offset) { _, snippet in
+                                        Button(action: {
+                                            tg.copySnippet(snippet)
+                                        }) {
+                                            HStack {
+                                                Text(snippet.replacingOccurrences(of: "\n", with: " "))
+                                                    .lineLimit(1)
+                                                Image(systemName: "doc.on.clipboard")
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                Divider()
+                                
+                                Button(action: {
+                                    tg.clearHistory()
+                                }) {
+                                    HStack {
+                                        Text("Clear History")
+                                        Image(systemName: "trash")
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 3) {
+                                Text(item.subtitle ?? tg.statusSubtitle)
+                                    .font(.system(size: 12, weight: item.isOn ? .bold : .medium, design: .rounded))
+                                    .foregroundColor(item.isOn ? Color(red: 0.25, green: 0.75, blue: 1.0) : Color.gray.opacity(0.85))
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 8))
+                                    .foregroundColor(Color.gray.opacity(0.6))
+                            }
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                    }
+                    .contextMenu {
+                        Button(action: {
+                            tg.snipAreaAndCopyText()
+                        }) {
+                            HStack {
+                                Text("Snip Area & Copy Text (⌘⌥C)")
+                                Image(systemName: "text.viewfinder")
+                            }
+                        }
+                        
+                        Button(action: {
+                            tg.snipFullScreenAndCopyText()
+                        }) {
+                            HStack {
+                                Text("Copy Text from Full Screen")
+                                Image(systemName: "display")
+                            }
+                        }
+                    }
                 } else if let subtitle = item.subtitle, !subtitle.isEmpty {
                     Text(subtitle)
                         .font(.system(size: 12, weight: .regular))
