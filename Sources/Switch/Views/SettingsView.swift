@@ -207,6 +207,29 @@ public struct SettingsView: View {
                         .toggleStyle(SwitchToggleStyle(tint: .accentColor))
                         .labelsHidden()
                     }
+                    
+                    Divider().background(Color.white.opacity(0.06))
+                    
+                    // Global Hotkey Info
+                    HStack {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Global Search Shortcut")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(.white)
+                            Text("Instantly open Switch and start typing to search from anywhere.")
+                                .font(.system(size: 11))
+                                .foregroundColor(.gray)
+                        }
+                        
+                        Spacer()
+                        
+                        Text("⌘⇧S")
+                            .font(.system(size: 12, weight: .bold, design: .monospaced))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(0.12)))
+                    }
                 }
                 .padding(14)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.06)))

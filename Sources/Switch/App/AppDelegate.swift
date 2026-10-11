@@ -58,8 +58,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
         _ = MouseBoostProService.shared
         _ = UltraPowerSaveService.shared
         _ = TextGrabberService.shared
-        _ = SpotlightService.shared
-        SpotlightService.shared.indexAllSwitches()
+        _ = GlobalHotkeyService.shared
+        GlobalHotkeyService.shared.registerGlobalHotkey()
         
         setupPopover()
         
@@ -229,6 +229,15 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
             queue: .main
         ) { _ in
             ClipboardService.shared.toggleWindow()
+        }
+        
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("com.armank.switch.toggleAndFocusSearch"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self = self, let button = self.statusItem?.button else { return }
+            self.showPopover(button)
         }
         
         // Native AppleEvent URL scheme registration

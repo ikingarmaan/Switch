@@ -28,6 +28,15 @@ public struct SwitchListView: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 12.5, weight: .regular))
                     .foregroundColor(.white)
+                    .onSubmit {
+                        if let firstMatch = viewModel.visibleSwitches.first {
+                            if firstMatch.isActionOnly {
+                                viewModel.triggerAction(type: firstMatch.type)
+                            } else {
+                                viewModel.toggleSwitch(item: firstMatch, newValue: !firstMatch.isOn)
+                            }
+                        }
+                    }
                 
                 if !viewModel.searchText.isEmpty {
                     Button(action: {
@@ -39,6 +48,15 @@ public struct SwitchListView: View {
                     }
                     .buttonStyle(.plain)
                     .help("Clear search")
+                } else {
+                    Text("⌘⇧S")
+                        .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                        .foregroundColor(Color.gray.opacity(0.7))
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1.5)
+                        .background(Color.white.opacity(0.06))
+                        .cornerRadius(3)
+                        .help("Global shortcut: Command+Shift+S")
                 }
             }
             .padding(.horizontal, 10)
