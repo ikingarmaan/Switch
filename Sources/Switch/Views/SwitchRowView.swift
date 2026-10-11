@@ -1892,6 +1892,40 @@ public struct SwitchRowView: View {
                             
                             Divider()
                             
+                            Section("Clean Intensity") {
+                                Button(action: {
+                                    ramService.deepCleanMode.toggle()
+                                }) {
+                                    HStack {
+                                        Text("Deep Clean (Aggressive Mach VM Sweep)")
+                                        if ramService.deepCleanMode {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                                
+                                if !ramService.isKernelPurgeAuthorized {
+                                    Button(action: {
+                                        ramService.authorizeKernelPurge()
+                                    }) {
+                                        HStack {
+                                            Text("Authorize Kernel Purge (Maximum Clean)...")
+                                            Image(systemName: "lock.shield")
+                                        }
+                                    }
+                                } else {
+                                    Button(action: {}) {
+                                        HStack {
+                                            Text("Kernel Purge: Enabled ✓")
+                                            Image(systemName: "checkmark.shield.fill")
+                                        }
+                                    }
+                                    .disabled(true)
+                                }
+                            }
+                            
+                            Divider()
+                            
                             Section("Anti-Lag Protection") {
                                 Button(action: {
                                     ramService.setAutoGuardEnabled(!ramService.isAutoGuardEnabled)
@@ -1927,6 +1961,23 @@ public struct SwitchRowView: View {
                                 }
                             }
                             
+                            if !ramService.topProcesses.isEmpty {
+                                Divider()
+                                
+                                Section("Top RAM Consumers") {
+                                    ForEach(ramService.topProcesses) { proc in
+                                        Button(action: {}) {
+                                            HStack {
+                                                Text(proc.name)
+                                                Spacer()
+                                                Text(proc.formattedMemory)
+                                            }
+                                        }
+                                        .disabled(true)
+                                    }
+                                }
+                            }
+                            
                             Divider()
                             
                             Section("Live System Memory (\(diag.usedPercentage)% Used)") {
@@ -1936,7 +1987,7 @@ public struct SwitchRowView: View {
                                 .disabled(true)
                                 
                                 Button(action: {}) {
-                                    Text("Used: \(diag.formattedUsed) · Free: \(String(format: "%.1f GB", Double(diag.freeMB) / 1024.0))")
+                                    Text("Used: \(diag.formattedUsed) · Free: \(diag.formattedFree)")
                                 }
                                 .disabled(true)
                                 
@@ -1946,7 +1997,12 @@ public struct SwitchRowView: View {
                                 .disabled(true)
                                 
                                 Button(action: {}) {
-                                    Text("Wired System Memory: \(diag.formattedWired)")
+                                    Text("Compressed Cache: \(diag.formattedCompressed)")
+                                }
+                                .disabled(true)
+                                
+                                Button(action: {}) {
+                                    Text("Wired Memory: \(diag.formattedWired)")
                                 }
                                 .disabled(true)
                                 
