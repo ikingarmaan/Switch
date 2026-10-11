@@ -4,6 +4,8 @@ import Combine
 
 @MainActor
 public final class SwitchListViewModel: ObservableObject {
+    public static let shared = SwitchListViewModel()
+    
     @Published public var switches: [SwitchItem] = []
     @Published public var isRefreshing: Bool = false
     

@@ -58,6 +58,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
         _ = MouseBoostProService.shared
         _ = UltraPowerSaveService.shared
         _ = TextGrabberService.shared
+        _ = SpotlightService.shared
+        SpotlightService.shared.indexAllSwitches()
         
         setupPopover()
         
@@ -110,14 +112,65 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
     
     public func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
-            let host = (url.host ?? url.path).lowercased()
-            if host.contains("clipboard") {
-                ClipboardService.shared.toggleWindow()
+            handleDeepLink(url: url)
+        }
+    }
+    
+    private func handleDeepLink(url: URL) {
+        let host = (url.host ?? "").lowercased()
+        let path = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")).lowercased()
+        
+        if host == "clipboard" || path.contains("clipboard") {
+            ClipboardService.shared.toggleWindow()
+            return
+        }
+        
+        // switch://search?q=query or switch://search/query
+        if host == "search" {
+            let query: String
+            if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+               let qItem = components.queryItems?.first(where: { $0.name == "q" }),
+               let val = qItem.value {
+                query = val
             } else {
-                if let button = statusItem?.button {
-                    showPopover(button)
+                query = path
+            }
+            SwitchListViewModel.shared.searchText = query
+            if let button = statusItem?.button {
+                showPopover(button)
+            }
+            return
+        }
+        
+        // switch://toggle/<type> or switch://action/<type>
+        let targetTypeRaw = !path.isEmpty ? path : host
+        if let matchedType = SwitchType.allCases.first(where: {
+            $0.rawValue.lowercased() == targetTypeRaw ||
+            $0.title.lowercased() == targetTypeRaw ||
+            $0.rawValue.lowercased() == host
+        }) {
+            if matchedType.isActionOnly {
+                SwitchListViewModel.shared.triggerAction(type: matchedType)
+            } else {
+                if let item = SwitchListViewModel.shared.switches.first(where: { $0.type == matchedType }) {
+                    SwitchListViewModel.shared.toggleSwitch(item: item, newValue: !item.isOn)
+                } else {
+                    let currentStatus = SystemControlService.shared.getStatus(for: matchedType).isOn
+                    SystemControlService.shared.setStatus(for: matchedType, isOn: !currentStatus)
+                    SwitchListViewModel.shared.refreshAll()
                 }
             }
+            
+            // Pop open Switch to confirm action visually to the user
+            if let button = statusItem?.button {
+                showPopover(button)
+            }
+            return
+        }
+        
+        // Default fallback: show Switch menu
+        if let button = statusItem?.button {
+            showPopover(button)
         }
     }
     

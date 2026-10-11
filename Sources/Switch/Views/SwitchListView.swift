@@ -1,7 +1,7 @@
 import SwiftUI
 
 public struct SwitchListView: View {
-    @StateObject private var viewModel = SwitchListViewModel()
+    @ObservedObject private var viewModel = SwitchListViewModel.shared
     
     public init() {}
     
