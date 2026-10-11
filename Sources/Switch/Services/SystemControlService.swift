@@ -200,16 +200,32 @@ public final class SystemControlService: @unchecked Sendable {
     public func getStatus(for type: SwitchType) -> (isOn: Bool, subtitle: String?) {
         switch type {
         case .hideDesktop:
-            let val = Shell.run("defaults read com.apple.finder CreateDesktop 2>/dev/null")
-            let isHidden = (val == "0" || val.lowercased() == "false")
+            let val = CFPreferencesCopyAppValue("CreateDesktop" as CFString, "com.apple.finder" as CFString)
+            let isHidden: Bool
+            if let b = val as? Bool {
+                isHidden = !b
+            } else if let n = val as? NSNumber {
+                isHidden = !n.boolValue
+            } else if let s = val as? String {
+                isHidden = (s == "0" || s.lowercased() == "false")
+            } else {
+                isHidden = false
+            }
             return (isHidden, nil)
             
         case .keepAwake:
             return (KeepAwakeService.shared.isEnabled(), nil)
             
         case .screenSaver:
-            let idleTimeStr = Shell.run("defaults -currentHost read com.apple.screensaver idleTime 2>/dev/null")
-            let idleSeconds = Int(idleTimeStr) ?? 0
+            let val = CFPreferencesCopyValue("idleTime" as CFString, "com.apple.screensaver" as CFString, kCFPreferencesCurrentUser, kCFPreferencesCurrentHost)
+            let idleSeconds: Int
+            if let num = val as? NSNumber {
+                idleSeconds = num.intValue
+            } else if let s = val as? String {
+                idleSeconds = Int(s) ?? 0
+            } else {
+                idleSeconds = 0
+            }
             if idleSeconds > 0 {
                 let minutes = max(1, idleSeconds / 60)
                 return (true, "\(minutes) min")
@@ -222,16 +238,36 @@ public final class SystemControlService: @unchecked Sendable {
             return (ns.isEnabled(), ns.subtitle)
             
         case .autohideDock:
-            let val = Shell.run("defaults read com.apple.dock autohide 2>/dev/null")
-            return (val == "1" || val.lowercased() == "true", nil)
+            let val = CFPreferencesCopyAppValue("autohide" as CFString, "com.apple.dock" as CFString)
+            let isAutohide: Bool
+            if let b = val as? Bool {
+                isAutohide = b
+            } else if let n = val as? NSNumber {
+                isAutohide = n.boolValue
+            } else if let s = val as? String {
+                isAutohide = (s == "1" || s.lowercased() == "true")
+            } else {
+                isAutohide = false
+            }
+            return (isAutohide, nil)
             
         case .autohideMenuBar:
             let mode = getMenuBarAutoHideMode()
             return (mode.hideOnDesktop, mode.shortLabel)
             
         case .hiddenFiles:
-            let val = Shell.run("defaults read com.apple.Finder AppleShowAllFiles 2>/dev/null")
-            return (val == "1" || val.lowercased() == "true", nil)
+            let val = CFPreferencesCopyAppValue("AppleShowAllFiles" as CFString, "com.apple.finder" as CFString)
+            let isShow: Bool
+            if let b = val as? Bool {
+                isShow = b
+            } else if let n = val as? NSNumber {
+                isShow = n.boolValue
+            } else if let s = val as? String {
+                isShow = (s == "1" || s.lowercased() == "true")
+            } else {
+                isShow = false
+            }
+            return (isShow, nil)
             
         case .lockKeyboard:
             return (KeyboardLockService.shared.isLocked, nil)
@@ -354,9 +390,10 @@ public final class SystemControlService: @unchecked Sendable {
     public func setStatus(for type: SwitchType, isOn: Bool) {
         switch type {
         case .hideDesktop:
-            // When ON, icons are hidden (CreateDesktop = false)
-            let val = isOn ? "false" : "true"
-            _ = Shell.run("defaults write com.apple.finder CreateDesktop -bool \(val); killall Finder")
+            let boolVal: CFPropertyList = (isOn ? kCFBooleanFalse : kCFBooleanTrue) as CFPropertyList
+            CFPreferencesSetValue("CreateDesktop" as CFString, boolVal, "com.apple.finder" as CFString, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+            CFPreferencesSynchronize("com.apple.finder" as CFString, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+            _ = Shell.run("defaults write com.apple.finder CreateDesktop -bool \(isOn ? "false" : "true"); killall Finder 2>/dev/null")
             
         case .keepAwake:
             KeepAwakeService.shared.setEnabled(isOn)
@@ -365,26 +402,37 @@ public final class SystemControlService: @unchecked Sendable {
             if isOn {
                 let saved = UserDefaults.standard.integer(forKey: "savedScreenSaverInterval")
                 let interval = saved > 0 ? saved : 300
-                _ = Shell.run("defaults -currentHost write com.apple.screensaver idleTime -int \(interval)")
+                let numVal: CFPropertyList = interval as NSNumber
+                CFPreferencesSetValue("idleTime" as CFString, numVal, "com.apple.screensaver" as CFString, kCFPreferencesCurrentUser, kCFPreferencesCurrentHost)
+                CFPreferencesSynchronize("com.apple.screensaver" as CFString, kCFPreferencesCurrentUser, kCFPreferencesCurrentHost)
             } else {
-                let current = Int(Shell.run("defaults -currentHost read com.apple.screensaver idleTime 2>/dev/null")) ?? 300
+                let val = CFPreferencesCopyValue("idleTime" as CFString, "com.apple.screensaver" as CFString, kCFPreferencesCurrentUser, kCFPreferencesCurrentHost)
+                let current = (val as? NSNumber)?.intValue ?? 300
                 if current > 0 {
                     UserDefaults.standard.set(current, forKey: "savedScreenSaverInterval")
                 }
-                _ = Shell.run("defaults -currentHost write com.apple.screensaver idleTime -int 0")
+                let numVal: CFPropertyList = 0 as NSNumber
+                CFPreferencesSetValue("idleTime" as CFString, numVal, "com.apple.screensaver" as CFString, kCFPreferencesCurrentUser, kCFPreferencesCurrentHost)
+                CFPreferencesSynchronize("com.apple.screensaver" as CFString, kCFPreferencesCurrentUser, kCFPreferencesCurrentHost)
             }
             
         case .nightShift:
             NightShiftService.shared.setEnabled(isOn)
             
         case .autohideDock:
-            _ = Shell.run("defaults write com.apple.dock autohide -bool \(isOn); killall Dock")
+            let boolVal: CFPropertyList = (isOn ? kCFBooleanTrue : kCFBooleanFalse) as CFPropertyList
+            CFPreferencesSetValue("autohide" as CFString, boolVal, "com.apple.dock" as CFString, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+            CFPreferencesSynchronize("com.apple.dock" as CFString, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+            _ = Shell.run("defaults write com.apple.dock autohide -bool \(isOn); killall Dock 2>/dev/null")
             
         case .autohideMenuBar:
             setMenuBarAutoHide(isOn)
             
         case .hiddenFiles:
-            _ = Shell.run("defaults write com.apple.Finder AppleShowAllFiles -bool \(isOn); killall Finder")
+            let boolVal: CFPropertyList = (isOn ? kCFBooleanTrue : kCFBooleanFalse) as CFPropertyList
+            CFPreferencesSetValue("AppleShowAllFiles" as CFString, boolVal, "com.apple.finder" as CFString, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+            CFPreferencesSynchronize("com.apple.finder" as CFString, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+            _ = Shell.run("defaults write com.apple.Finder AppleShowAllFiles -bool \(isOn); killall Finder 2>/dev/null")
             
         case .lockKeyboard:
             DispatchQueue.main.async {
@@ -441,10 +489,10 @@ public final class SystemControlService: @unchecked Sendable {
             }
             
         case .lockScreen:
-            _ = Shell.run("/System/Library/CoreServices/Menu Extras/User.menu/Contents/Resources/CGSession -suspend || pmset displaysleepnow")
+            lockMac()
             
         case .emptyTrash:
-            _ = Shell.run("rm -rf ~/.Trash/* 2>/dev/null")
+            emptyTrashNative()
             
         case .forceQuitApps:
             if isOn {
@@ -564,6 +612,34 @@ public final class SystemControlService: @unchecked Sendable {
         guard let handle = skyLightHandle, let sym = dlsym(handle, "CGSGetMenuBarAutohideEnabled") else { return nil }
         return unsafeBitCast(sym, to: CGSGetMenuBarAutohideEnabled_t.self)
     }()
+
+    private typealias SACLockScreenImmediate_t = @convention(c) () -> Void
+    private static let sacLockScreenImmediate: SACLockScreenImmediate_t? = {
+        guard let handle = dlopen("/System/Library/PrivateFrameworks/login.framework/Versions/Current/login", RTLD_LAZY),
+              let sym = dlsym(handle, "SACLockScreenImmediate") else { return nil }
+        return unsafeBitCast(sym, to: SACLockScreenImmediate_t.self)
+    }()
+
+    public func lockMac() {
+        if let lockFunc = Self.sacLockScreenImmediate {
+            lockFunc()
+        } else {
+            _ = Shell.run("/System/Library/CoreServices/Menu Extras/User.menu/Contents/Resources/CGSession -suspend || pmset displaysleepnow")
+        }
+    }
+
+    public func emptyTrashNative() {
+        DispatchQueue.global(qos: .utility).async {
+            let trashPath = ("~/.Trash" as NSString).expandingTildeInPath
+            let fm = FileManager.default
+            if let items = try? fm.contentsOfDirectory(atPath: trashPath) {
+                for item in items {
+                    let fullPath = (trashPath as NSString).appendingPathComponent(item)
+                    try? fm.removeItem(atPath: fullPath)
+                }
+            }
+        }
+    }
 
     public func getMenuBarAutoHideMode() -> MenuBarAutoHideMode {
         let hideOnDesktop: Bool
@@ -687,9 +763,9 @@ public final class SystemControlService: @unchecked Sendable {
         case .screenSaver:
             _ = Shell.run("open -a ScreenSaverEngine")
         case .lockScreen:
-            _ = Shell.run("/System/Library/CoreServices/Menu Extras/User.menu/Contents/Resources/CGSession -suspend || pmset displaysleepnow")
+            lockMac()
         case .emptyTrash:
-            _ = Shell.run("rm -rf ~/.Trash/* 2>/dev/null")
+            emptyTrashNative()
         case .autoWallpaper:
             DispatchQueue.main.async {
                 WallpaperChangerService.shared.nextWallpaper(notify: true)

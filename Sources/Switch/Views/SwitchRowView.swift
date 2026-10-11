@@ -723,8 +723,8 @@ public struct SwitchRowView: View {
                             }
                         } label: {
                             HStack(spacing: 3) {
-                                Text(item.isOn ? "Live" : "Off")
-                                    .font(.system(size: 12, weight: item.isOn ? .bold : .regular, design: .rounded))
+                                Text(item.isOn ? (item.subtitle ?? "Live") : "Off")
+                                    .font(.system(size: 11.5, weight: item.isOn ? .semibold : .regular, design: item.isOn ? .monospaced : .rounded))
                                     .foregroundColor(item.isOn ? Color(red: 0.22, green: 0.74, blue: 0.97) : Color.gray.opacity(0.85))
                                 Image(systemName: "chevron.down")
                                     .font(.system(size: 8))

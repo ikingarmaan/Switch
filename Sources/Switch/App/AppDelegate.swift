@@ -1,8 +1,13 @@
 import Cocoa
 import SwiftUI
 
+public extension Notification.Name {
+    static let switchPopoverDidOpen = Notification.Name("SwitchPopoverDidOpen")
+    static let switchPopoverDidClose = Notification.Name("SwitchPopoverDidClose")
+}
+
 @MainActor
-public final class AppDelegate: NSObject, NSApplicationDelegate {
+public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var statusItem: NSStatusItem?
     private var popover: NSPopover = NSPopover()
     

@@ -183,7 +183,8 @@ public final class SwitchListViewModel: ObservableObject {
                 else { return }
                 self.switches[index].isOn = isEnabled
                 self.switches[index].isLoading = false
-                self.switches[index].subtitle = isEnabled ? "Menu Bar" : nil
+                let s = SystemMonitorService.shared
+                self.switches[index].subtitle = isEnabled ? "⚡\(Int(s.cpuPercent))% 🧠\(Int(s.ramPercent))%" : nil
             }
             .store(in: &cancellables)
             
@@ -194,7 +195,8 @@ public final class SwitchListViewModel: ObservableObject {
                       let index = self.switches.firstIndex(where: { $0.type == .systemMonitor })
                 else { return }
                 if self.switches[index].isOn {
-                    self.switches[index].subtitle = "Menu Bar"
+                    let s = SystemMonitorService.shared
+                    self.switches[index].subtitle = "⚡\(Int(s.cpuPercent))% 🧠\(Int(s.ramPercent))%"
                 }
             }
             .store(in: &cancellables)
@@ -591,6 +593,22 @@ public final class SwitchListViewModel: ObservableObject {
                 self.switches[index].isOn = isEnabled
                 self.switches[index].isLoading = false
                 self.switches[index].subtitle = tg.statusSubtitle
+            }
+            .store(in: &cancellables)
+            
+        // Lifecycle optimizations: only run periodic refresh when Switch UI is visible
+        NotificationCenter.default.publisher(for: .switchPopoverDidOpen)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.refreshAll(silently: true)
+                self?.startPeriodicRefresh()
+            }
+            .store(in: &cancellables)
+            
+        NotificationCenter.default.publisher(for: .switchPopoverDidClose)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.stopPeriodicRefresh()
             }
             .store(in: &cancellables)
     }

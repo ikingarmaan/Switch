@@ -1,8 +1,36 @@
 import SwiftUI
 import AppKit
 
+public enum MonitorPopoverTab: String, CaseIterable, Identifiable {
+    case all = "All"
+    case cpu = "CPU"
+    case memory = "Memory"
+    case networkDisk = "Network & Disk"
+    case battery = "Battery"
+    
+    public var id: String { rawValue }
+    
+    public var icon: String {
+        switch self {
+        case .all: return "square.grid.2x2.fill"
+        case .cpu: return "bolt.fill"
+        case .memory: return "memorychip"
+        case .networkDisk: return "network"
+        case .battery: return "battery.100.bolt"
+        }
+    }
+}
+
+public final class SystemMonitorPopoverViewState: ObservableObject {
+    @Published public var selectedTab: MonitorPopoverTab = .all
+    @Published public var hoveredPid: Int32? = nil
+    
+    public init() {}
+}
+
 public struct SystemMonitorPopoverView: View {
     @ObservedObject var service: SystemMonitorService
+    @StateObject private var viewState = SystemMonitorPopoverViewState()
     
     public init(service: SystemMonitorService = .shared) {
         self.service = service
@@ -13,21 +41,43 @@ public struct SystemMonitorPopoverView: View {
             // MARK: - Header
             headerView
             
+            // MARK: - Category Segment Bar
+            categoryTabBar
+            
             Divider()
                 .background(Color.white.opacity(0.12))
             
-            // MARK: - Scrollable Metrics
+            // MARK: - Scrollable Metrics Content
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 14) {
-                    cpuCard
-                    ramCard
-                    ssdCard
-                    if service.hasBattery {
-                        batteryCard
+                VStack(spacing: 12) {
+                    switch viewState.selectedTab {
+                    case .all:
+                        cpuCard
+                        memoryActivityMonitorCard
+                        networkCard
+                        ssdCard
+                        if service.hasBattery {
+                            batteryCard
+                        }
+                    case .cpu:
+                        cpuCard
+                        detailedProcessesCard(isCpu: true)
+                    case .memory:
+                        memoryActivityMonitorCard
+                        detailedProcessesCard(isCpu: false)
+                    case .networkDisk:
+                        networkCard
+                        ssdCard
+                    case .battery:
+                        if service.hasBattery {
+                            batteryCard
+                        } else {
+                            noBatteryCard
+                        }
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 14)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
             }
             
             Divider()
@@ -36,7 +86,7 @@ public struct SystemMonitorPopoverView: View {
             // MARK: - Footer & Actions
             footerView
         }
-        .frame(width: 330, height: 620)
+        .frame(width: 360, height: 630)
         .background(VisualEffectView(material: .hudWindow, blendingMode: .behindWindow))
     }
     
@@ -46,9 +96,9 @@ public struct SystemMonitorPopoverView: View {
             ZStack {
                 Circle()
                     .fill(Color(red: 0.15, green: 0.65, blue: 0.95).opacity(0.2))
-                    .frame(width: 28, height: 28)
+                    .frame(width: 30, height: 30)
                 Image(systemName: "gauge.with.needle.fill")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(Color(red: 0.22, green: 0.74, blue: 0.97))
             }
             
@@ -65,8 +115,8 @@ public struct SystemMonitorPopoverView: View {
                         .shadow(color: Color(red: 0.25, green: 0.85, blue: 0.45).opacity(0.8), radius: 2)
                 }
                 
-                Text("\(service.chipName) • \(service.coreCount) Cores")
-                    .font(.system(size: 10.5, weight: .medium))
+                Text("\(service.chipName) • \(service.coreCount) Cores • \(service.totalRAMFormatted)")
+                    .font(.system(size: 10, weight: .medium))
                     .foregroundColor(Color.gray.opacity(0.8))
             }
             
@@ -85,8 +135,40 @@ public struct SystemMonitorPopoverView: View {
             .buttonStyle(.plain)
             .help("Refresh metrics now")
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 14)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
+    }
+    
+    // MARK: - Category Tab Bar
+    private var categoryTabBar: some View {
+        HStack(spacing: 4) {
+            ForEach(MonitorPopoverTab.allCases) { tab in
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        viewState.selectedTab = tab
+                    }
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: tab.icon)
+                            .font(.system(size: 9.5))
+                        Text(tab.rawValue)
+                            .font(.system(size: 10, weight: viewState.selectedTab == tab ? .bold : .medium))
+                    }
+                    .foregroundColor(viewState.selectedTab == tab ? .white : Color.gray.opacity(0.8))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4.5)
+                    .background(
+                        viewState.selectedTab == tab
+                            ? RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(0.14))
+                            : RoundedRectangle(cornerRadius: 6).fill(Color.clear)
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.bottom, 8)
     }
     
     // MARK: - CPU Card
@@ -129,44 +211,29 @@ public struct SystemMonitorPopoverView: View {
             }
             .frame(height: 6)
             
-            // Sub-breakdown (User, System, Idle)
+            // Sub-breakdown (User, System, Idle + Threads & Tasks)
             HStack {
                 Text("User: \(String(format: "%.0f%%", service.cpuUserPercent))")
                 Spacer()
-                Text("System: \(String(format: "%.0f%%", service.cpuSysPercent))")
+                Text("Sys: \(String(format: "%.0f%%", service.cpuSysPercent))")
                 Spacer()
                 Text("Idle: \(String(format: "%.0f%%", service.cpuIdlePercent))")
+                Spacer()
+                Text("\(service.threadCount) Thds")
             }
             .font(.system(size: 9.5, weight: .medium, design: .monospaced))
             .foregroundColor(Color.gray.opacity(0.8))
             
             // Top CPU Apps List
             if !service.topCPUApps.isEmpty {
-                VStack(spacing: 5) {
+                VStack(spacing: 4) {
                     ForEach(service.topCPUApps.prefix(3)) { proc in
-                        HStack(spacing: 7) {
-                            ProcessIconView(service: service, proc: proc)
-                            
-                            Text(proc.displayName)
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(.white)
-                                .lineLimit(1)
-                            
-                            Spacer()
-                            
-                            Text(String(format: "%.1f%%", proc.cpuPercent))
-                                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                                .foregroundColor(Color(red: 0.22, green: 0.74, blue: 0.97))
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3.5)
-                        .background(Color.white.opacity(0.04))
-                        .cornerRadius(5)
+                        processRow(proc: proc, isCpu: true)
                     }
                 }
             }
         }
-        .padding(12)
+        .padding(11)
         .background(Color.black.opacity(0.25))
         .cornerRadius(9)
         .overlay(
@@ -175,30 +242,39 @@ public struct SystemMonitorPopoverView: View {
         )
     }
     
-    // MARK: - RAM Card
-    private var ramCard: some View {
+    // MARK: - Memory Activity Monitor Card
+    private var memoryActivityMonitorCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Title & Main Stat
-            HStack(alignment: .firstTextBaseline) {
+            // Header with Pressure Badge
+            HStack(alignment: .center) {
                 HStack(spacing: 5) {
                     Image(systemName: "memorychip")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(Color(red: 0.72, green: 0.48, blue: 0.98))
-                    Text("MEMORY (RAM)")
+                    Text("MEMORY")
                         .font(.system(size: 11, weight: .bold))
                         .foregroundColor(Color.white.opacity(0.9))
                 }
                 
                 Spacer()
                 
+                // Activity Monitor Pressure Badge
                 HStack(spacing: 4) {
-                    Text(String(format: "%.1f%%", service.ramPercent))
-                        .font(.system(size: 15, weight: .heavy, design: .rounded))
-                        .foregroundColor(Color(red: 0.72, green: 0.48, blue: 0.98))
-                    Text("(\(service.formatBytes(service.ramUsedBytes)))")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(Color.gray.opacity(0.85))
+                    Circle()
+                        .fill(service.memoryPressureState.color)
+                        .frame(width: 7, height: 7)
+                    Text("Pressure: \(service.memoryPressureState.rawValue)")
+                        .font(.system(size: 9.5, weight: .bold))
+                        .foregroundColor(service.memoryPressureState.color)
                 }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2.5)
+                .background(service.memoryPressureState.color.opacity(0.12))
+                .clipShape(Capsule())
+                
+                Text(String(format: "%.1f%%", service.ramPercent))
+                    .font(.system(size: 15, weight: .heavy, design: .rounded))
+                    .foregroundColor(Color(red: 0.72, green: 0.48, blue: 0.98))
             }
             
             // Segmented RAM Bar
@@ -232,43 +308,94 @@ public struct SystemMonitorPopoverView: View {
             }
             .frame(height: 6)
             
-            // RAM Legend
-            HStack(spacing: 8) {
-                legendItem(color: Color(red: 0.25, green: 0.75, blue: 0.95), label: "App: \(service.formatBytes(service.ramAppBytes))")
-                Spacer()
-                legendItem(color: Color(red: 0.95, green: 0.60, blue: 0.25), label: "Wired: \(service.formatBytes(service.ramWiredBytes))")
-                Spacer()
-                legendItem(color: Color(red: 0.72, green: 0.48, blue: 0.98), label: "Comp: \(service.formatBytes(service.ramCompressedBytes))")
+            // Activity Monitor Exact Metrics Grid
+            VStack(spacing: 4) {
+                HStack {
+                    metricItem(label: "App Memory", value: service.formatBytes(service.ramAppBytes), color: Color(red: 0.25, green: 0.75, blue: 0.95))
+                    Spacer()
+                    metricItem(label: "Wired Memory", value: service.formatBytes(service.ramWiredBytes), color: Color(red: 0.95, green: 0.60, blue: 0.25))
+                }
+                HStack {
+                    metricItem(label: "Compressed", value: service.formatBytes(service.ramCompressedBytes), color: Color(red: 0.72, green: 0.48, blue: 0.98))
+                    Spacer()
+                    metricItem(label: "Cached Files", value: service.formatBytes(service.ramCachedBytes), color: Color(red: 0.32, green: 0.85, blue: 0.58))
+                }
+                HStack {
+                    metricItem(label: "Memory Used", value: service.formatBytes(service.ramUsedBytes), color: Color.white.opacity(0.9))
+                    Spacer()
+                    metricItem(label: "Swap Used", value: service.formatBytes(service.swapUsedBytes), color: service.swapUsedBytes > 0 ? Color.orange : Color.gray)
+                }
             }
-            .font(.system(size: 9, weight: .medium))
+            .padding(7)
+            .background(Color.white.opacity(0.03))
+            .cornerRadius(6)
             
             // Top RAM Apps List
             if !service.topRAMApps.isEmpty {
-                VStack(spacing: 5) {
+                VStack(spacing: 4) {
                     ForEach(service.topRAMApps.prefix(3)) { proc in
-                        HStack(spacing: 7) {
-                            ProcessIconView(service: service, proc: proc)
-                            
-                            Text(proc.displayName)
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(.white)
-                                .lineLimit(1)
-                            
-                            Spacer()
-                            
-                            Text(proc.memFormatted)
-                                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                                .foregroundColor(Color(red: 0.72, green: 0.48, blue: 0.98))
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3.5)
-                        .background(Color.white.opacity(0.04))
-                        .cornerRadius(5)
+                        processRow(proc: proc, isCpu: false)
                     }
                 }
             }
         }
-        .padding(12)
+        .padding(11)
+        .background(Color.black.opacity(0.25))
+        .cornerRadius(9)
+        .overlay(
+            RoundedRectangle(cornerRadius: 9)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
+    }
+    
+    // MARK: - Network Card
+    private var networkCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                HStack(spacing: 5) {
+                    Image(systemName: "network")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(Color(red: 0.28, green: 0.82, blue: 0.92))
+                    Text("NETWORK LIVE")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(Color.white.opacity(0.9))
+                }
+                
+                Spacer()
+                
+                HStack(spacing: 8) {
+                    HStack(spacing: 3) {
+                        Image(systemName: "arrow.down")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(Color(red: 0.32, green: 0.85, blue: 0.58))
+                        Text(service.formatSpeed(service.downloadSpeedBytesPerSec))
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .foregroundColor(Color(red: 0.32, green: 0.85, blue: 0.58))
+                    }
+                    
+                    HStack(spacing: 3) {
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(Color(red: 0.22, green: 0.74, blue: 0.97))
+                        Text(service.formatSpeed(service.uploadSpeedBytesPerSec))
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .foregroundColor(Color(red: 0.22, green: 0.74, blue: 0.97))
+                    }
+                }
+            }
+            
+            // Network Totals Row
+            HStack {
+                Text("In: \(service.formatBytes(service.totalDownloadedBytes))")
+                Spacer()
+                Text("Out: \(service.formatBytes(service.totalUploadedBytes))")
+                Spacer()
+                Text("All Active Interfaces")
+            }
+            .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+            .foregroundColor(Color.gray.opacity(0.8))
+        }
+        .padding(11)
         .background(Color.black.opacity(0.25))
         .cornerRadius(9)
         .overlay(
@@ -280,7 +407,6 @@ public struct SystemMonitorPopoverView: View {
     // MARK: - SSD Card
     private var ssdCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Title & Main Stat
             HStack(alignment: .firstTextBaseline) {
                 HStack(spacing: 5) {
                     Image(systemName: "internaldrive.fill")
@@ -333,7 +459,7 @@ public struct SystemMonitorPopoverView: View {
             .font(.system(size: 9.5, weight: .medium))
             .foregroundColor(Color.gray.opacity(0.8))
         }
-        .padding(12)
+        .padding(11)
         .background(Color.black.opacity(0.25))
         .cornerRadius(9)
         .overlay(
@@ -345,7 +471,6 @@ public struct SystemMonitorPopoverView: View {
     // MARK: - Battery Card
     private var batteryCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Title & Main Stat
             HStack(alignment: .firstTextBaseline) {
                 HStack(spacing: 5) {
                     Image(systemName: service.isCharging ? "bolt.batteryblock.fill" : (service.batteryPercent <= 20 ? "battery.25" : "battery.100.bolt"))
@@ -409,10 +534,10 @@ public struct SystemMonitorPopoverView: View {
             }
             
             // Health & Specs Grid
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 batteryInfoTile(title: "HEALTH", value: "\(service.batteryHealthPercent)%", sub: service.batteryCondition)
                 batteryInfoTile(title: "CYCLES", value: "\(service.batteryCycleCount)", sub: "of 1000")
-                batteryInfoTile(title: "SOURCE", value: service.isPluggedIn ? "Power Adapter" : "Battery", sub: service.isCharging ? "Charging" : (service.isCharged ? "Full" : "On Battery"))
+                batteryInfoTile(title: "SOURCE", value: service.isPluggedIn ? "Adapter" : "Battery", sub: service.isCharging ? "Charging" : (service.isCharged ? "Full" : "Discharging"))
             }
             
             // Open Battery Settings
@@ -438,7 +563,7 @@ public struct SystemMonitorPopoverView: View {
             }
             .buttonStyle(.plain)
         }
-        .padding(12)
+        .padding(11)
         .background(Color.black.opacity(0.25))
         .cornerRadius(9)
         .overlay(
@@ -447,60 +572,99 @@ public struct SystemMonitorPopoverView: View {
         )
     }
     
-    private func batteryInfoTile(title: String, value: String, sub: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(.system(size: 8, weight: .bold))
-                .foregroundColor(Color.gray.opacity(0.7))
-            Text(value)
-                .font(.system(size: 11.5, weight: .bold, design: .rounded))
+    private var noBatteryCard: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "powerplug.fill")
+                .font(.system(size: 24))
+                .foregroundColor(Color.gray.opacity(0.6))
+            Text("Desktop Mac (AC Powered)")
+                .font(.system(size: 12, weight: .medium))
                 .foregroundColor(.white)
-                .lineLimit(1)
-            Text(sub)
-                .font(.system(size: 8.5, weight: .medium))
-                .foregroundColor(Color.gray.opacity(0.8))
-                .lineLimit(1)
+            Text("No internal battery installed.")
+                .font(.system(size: 10))
+                .foregroundColor(.gray)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(6)
+        .frame(maxWidth: .infinity)
+        .padding(24)
+        .background(Color.black.opacity(0.25))
+        .cornerRadius(9)
+    }
+    
+    // MARK: - Dedicated Processes Card (Tabs CPU / Memory)
+    private func detailedProcessesCard(isCpu: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(isCpu ? "TOP CPU PROCESSES" : "TOP MEMORY PROCESSES")
+                .font(.system(size: 10.5, weight: .bold))
+                .foregroundColor(Color.white.opacity(0.85))
+            
+            let list = isCpu ? service.topCPUApps : service.topRAMApps
+            if list.isEmpty {
+                Text("Sampling processes...")
+                    .font(.system(size: 11))
+                    .foregroundColor(.gray)
+                    .padding(.vertical, 10)
+            } else {
+                VStack(spacing: 5) {
+                    ForEach(list) { proc in
+                        processRow(proc: proc, isCpu: isCpu, showPid: true)
+                    }
+                }
+            }
+        }
+        .padding(11)
+        .background(Color.black.opacity(0.25))
+        .cornerRadius(9)
+        .overlay(
+            RoundedRectangle(cornerRadius: 9)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
+    }
+    
+    // MARK: - Process Row with 1-Click Quit Action
+    private func processRow(proc: MonitoredProcess, isCpu: Bool, showPid: Bool = false) -> some View {
+        HStack(spacing: 7) {
+            ProcessIconView(service: service, proc: proc)
+            
+            VStack(alignment: .leading, spacing: 1) {
+                Text(proc.displayName)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                
+                if showPid {
+                    Text("PID: \(proc.pid)")
+                        .font(.system(size: 8.5, weight: .regular, design: .monospaced))
+                        .foregroundColor(Color.gray.opacity(0.75))
+                }
+            }
+            
+            Spacer()
+            
+            if isCpu {
+                Text(String(format: "%.1f%%", proc.cpuPercent))
+                    .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                    .foregroundColor(Color(red: 0.22, green: 0.74, blue: 0.97))
+            } else {
+                Text(proc.memFormatted)
+                    .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                    .foregroundColor(Color(red: 0.72, green: 0.48, blue: 0.98))
+            }
+            
+            // Hover-revealed or subtle 1-click terminate button
+            Button(action: {
+                service.terminateProcess(pid: proc.pid, force: false)
+            }) {
+                Image(systemName: "xmark.circle")
+                    .font(.system(size: 11))
+                    .foregroundColor(Color.red.opacity(0.75))
+            }
+            .buttonStyle(.plain)
+            .help("Quit \(proc.displayName) (PID \(proc.pid))")
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3.5)
         .background(Color.white.opacity(0.04))
-        .cornerRadius(6)
-    }
-    
-    private var batteryAccentColor: Color {
-        if service.isCharging {
-            return Color(red: 0.25, green: 0.85, blue: 0.98)
-        } else if service.batteryPercent > 40 {
-            return Color(red: 0.32, green: 0.85, blue: 0.58)
-        } else if service.batteryPercent > 20 {
-            return Color(red: 1.0, green: 0.72, blue: 0.20)
-        } else {
-            return Color(red: 1.0, green: 0.35, blue: 0.35)
-        }
-    }
-    
-    private var batteryStateLabel: String {
-        if service.isCharging {
-            return "⚡ Charging"
-        } else if service.isCharged {
-            return "✓ Charged"
-        } else if service.isPluggedIn {
-            return "🔌 Plugged In"
-        } else {
-            return "🔋 Discharging"
-        }
-    }
-    
-    private var batteryGradientColors: [Color] {
-        if service.isCharging {
-            return [Color(red: 0.20, green: 0.65, blue: 0.95), Color(red: 0.35, green: 0.90, blue: 1.0)]
-        } else if service.batteryPercent > 40 {
-            return [Color(red: 0.18, green: 0.70, blue: 0.45), Color(red: 0.38, green: 0.92, blue: 0.65)]
-        } else if service.batteryPercent > 20 {
-            return [Color(red: 0.95, green: 0.55, blue: 0.15), Color(red: 1.0, green: 0.75, blue: 0.25)]
-        } else {
-            return [Color(red: 0.90, green: 0.20, blue: 0.20), Color(red: 1.0, green: 0.40, blue: 0.40)]
-        }
+        .cornerRadius(5)
     }
     
     // MARK: - Footer
@@ -559,18 +723,80 @@ public struct SystemMonitorPopoverView: View {
             .buttonStyle(.plain)
             .help("Launch Activity Monitor app")
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
     }
     
-    // MARK: - Helper Views
-    private func legendItem(color: Color, label: String) -> some View {
-        HStack(spacing: 3) {
+    // MARK: - Metric Helpers
+    private func metricItem(label: String, value: String, color: Color) -> some View {
+        HStack(spacing: 4) {
             Circle()
                 .fill(color)
                 .frame(width: 5, height: 5)
             Text(label)
+                .font(.system(size: 9, weight: .medium))
                 .foregroundColor(Color.gray.opacity(0.85))
+            Spacer()
+            Text(value)
+                .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                .foregroundColor(.white)
+        }
+        .frame(width: 145)
+    }
+    
+    private func batteryInfoTile(title: String, value: String, sub: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.system(size: 8, weight: .bold))
+                .foregroundColor(Color.gray.opacity(0.7))
+            Text(value)
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .foregroundColor(.white)
+                .lineLimit(1)
+            Text(sub)
+                .font(.system(size: 8, weight: .medium))
+                .foregroundColor(Color.gray.opacity(0.8))
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(5)
+        .background(Color.white.opacity(0.04))
+        .cornerRadius(6)
+    }
+    
+    private var batteryAccentColor: Color {
+        if service.isCharging {
+            return Color(red: 0.25, green: 0.85, blue: 0.98)
+        } else if service.batteryPercent > 40 {
+            return Color(red: 0.32, green: 0.85, blue: 0.58)
+        } else if service.batteryPercent > 20 {
+            return Color(red: 1.0, green: 0.72, blue: 0.20)
+        } else {
+            return Color(red: 1.0, green: 0.35, blue: 0.35)
+        }
+    }
+    
+    private var batteryStateLabel: String {
+        if service.isCharging {
+            return "⚡ Charging"
+        } else if service.isCharged {
+            return "✓ Charged"
+        } else if service.isPluggedIn {
+            return "🔌 Plugged In"
+        } else {
+            return "🔋 Discharging"
+        }
+    }
+    
+    private var batteryGradientColors: [Color] {
+        if service.isCharging {
+            return [Color(red: 0.20, green: 0.65, blue: 0.95), Color(red: 0.35, green: 0.90, blue: 1.0)]
+        } else if service.batteryPercent > 40 {
+            return [Color(red: 0.18, green: 0.70, blue: 0.45), Color(red: 0.38, green: 0.92, blue: 0.65)]
+        } else if service.batteryPercent > 20 {
+            return [Color(red: 0.95, green: 0.55, blue: 0.15), Color(red: 1.0, green: 0.75, blue: 0.25)]
+        } else {
+            return [Color(red: 0.90, green: 0.20, blue: 0.20), Color(red: 1.0, green: 0.40, blue: 0.40)]
         }
     }
 }

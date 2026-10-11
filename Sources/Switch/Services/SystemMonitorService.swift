@@ -15,6 +15,7 @@ public enum MonitorDisplayMode: String, CaseIterable, Identifiable, Codable, Sen
     case compact = "Compact"
     case stacked = "Stacked"
     case compactWithApp = "With App"
+    case networkSpeed = "Network"
     case minimal = "Mini"
     case textOnly = "Text"
     case values = "Values"
@@ -26,9 +27,32 @@ public enum MonitorDisplayMode: String, CaseIterable, Identifiable, Codable, Sen
         case .compact: return "Compact (⚡18% 🧠75% 💾70% 🔋78%)"
         case .stacked: return "Stacked 2-Line (Ultra-Narrow)"
         case .compactWithApp: return "Compact with App (⚡18%(App) 🧠75% 💾70% 🔋78%)"
+        case .networkSpeed: return "Network & System (⚡18% 🧠75% ↓1.2M ↑340K)"
         case .minimal: return "Mini CPU, RAM & Battery (⚡18% 🧠75% 🔋78%)"
         case .textOnly: return "Text Only (C:18% M:75% S:70% B:78%)"
         case .values: return "Storage Values (⚡18% 🧠6.5G 💾72G 🔋78%)"
+        }
+    }
+}
+
+public enum MemoryPressureState: String, Sendable {
+    case normal = "Normal"
+    case warning = "Warning"
+    case critical = "Critical"
+    
+    public var color: Color {
+        switch self {
+        case .normal: return Color(red: 0.25, green: 0.85, blue: 0.45)
+        case .warning: return Color(red: 0.98, green: 0.72, blue: 0.18)
+        case .critical: return Color(red: 0.98, green: 0.28, blue: 0.28)
+        }
+    }
+    
+    public var icon: String {
+        switch self {
+        case .normal: return "checkmark.circle.fill"
+        case .warning: return "exclamationmark.triangle.fill"
+        case .critical: return "xmark.octagon.fill"
         }
     }
 }
@@ -83,8 +107,10 @@ public final class SystemMonitorService: ObservableObject, @unchecked Sendable {
     @Published public private(set) var cpuUserPercent: Double = 0.0
     @Published public private(set) var cpuSysPercent: Double = 0.0
     @Published public private(set) var cpuIdlePercent: Double = 100.0
+    @Published public private(set) var threadCount: Int = 0
+    @Published public private(set) var processCount: Int = 0
     
-    // RAM
+    // RAM (Accurate to macOS Activity Monitor)
     @Published public private(set) var ramPercent: Double = 0.0
     @Published public private(set) var ramUsedBytes: UInt64 = 0
     @Published public private(set) var ramTotalBytes: UInt64 = 0
@@ -92,12 +118,23 @@ public final class SystemMonitorService: ObservableObject, @unchecked Sendable {
     @Published public private(set) var ramAppBytes: UInt64 = 0
     @Published public private(set) var ramWiredBytes: UInt64 = 0
     @Published public private(set) var ramCompressedBytes: UInt64 = 0
+    @Published public private(set) var ramCachedBytes: UInt64 = 0
+    @Published public private(set) var swapUsedBytes: UInt64 = 0
+    @Published public private(set) var swapTotalBytes: UInt64 = 0
+    @Published public private(set) var memoryPressureLevel: Int = 1
+    @Published public private(set) var memoryPressureState: MemoryPressureState = .normal
     
-    // SSD
+    // SSD / Storage
     @Published public private(set) var ssdPercent: Double = 0.0
     @Published public private(set) var ssdUsedBytes: UInt64 = 0
     @Published public private(set) var ssdTotalBytes: UInt64 = 0
     @Published public private(set) var ssdFreeBytes: UInt64 = 0
+    
+    // Live Network Bandwidth & Totals
+    @Published public private(set) var downloadSpeedBytesPerSec: Double = 0.0
+    @Published public private(set) var uploadSpeedBytesPerSec: Double = 0.0
+    @Published public private(set) var totalDownloadedBytes: UInt64 = 0
+    @Published public private(set) var totalUploadedBytes: UInt64 = 0
     
     // Battery
     @Published public private(set) var hasBattery: Bool = false
@@ -133,6 +170,11 @@ public final class SystemMonitorService: ObservableObject, @unchecked Sendable {
     private var updateTimer: Timer?
     private var prevCpuLoad: host_cpu_load_info?
     private var isSampling: Bool = false
+    
+    // Network deltas
+    private var prevNetInBytes: UInt64 = 0
+    private var prevNetOutBytes: UInt64 = 0
+    private var prevNetTimestamp: Date?
     
     // Cached app icons
     private var iconCache: [Int32: NSImage] = [:]
@@ -246,13 +288,13 @@ public final class SystemMonitorService: ObservableObject, @unchecked Sendable {
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         button.font = NSFont.monospacedDigitSystemFont(ofSize: 11.5, weight: .medium)
         button.title = "⚡... 🧠... 💾... 🔋..."
-        button.toolTip = "System Monitor (CPU, RAM, SSD, Battery)\nClick for live details & top apps"
+        button.toolTip = "System Monitor (Activity Monitor Quality)\nClick for live details & top apps"
     }
     
     private func setupPopover() {
         popover.behavior = .transient
         popover.animates = true
-        popover.contentSize = NSSize(width: 330, height: 640)
+        popover.contentSize = NSSize(width: 360, height: 620)
         popover.contentViewController = NSHostingController(rootView: SystemMonitorPopoverView(service: self))
     }
     
@@ -330,6 +372,25 @@ public final class SystemMonitorService: ObservableObject, @unchecked Sendable {
         }
     }
     
+    // MARK: - Process Management Actions
+    
+    public func terminateProcess(pid: Int32, force: Bool = false) {
+        if let app = NSRunningApplication(processIdentifier: pid) {
+            if force {
+                _ = app.forceTerminate()
+            } else {
+                _ = app.terminate()
+            }
+        } else {
+            kill(pid, force ? SIGKILL : SIGTERM)
+        }
+        
+        // Resample immediately
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.sampleMetrics()
+        }
+    }
+    
     // MARK: - Metrics Sampling
     
     private func sampleMetricsImmediate() {
@@ -342,6 +403,9 @@ public final class SystemMonitorService: ObservableObject, @unchecked Sendable {
         
         let previousLoad = self.prevCpuLoad
         let needDetailedProcesses = popover.isShown
+        let lastNetIn = self.prevNetInBytes
+        let lastNetOut = self.prevNetOutBytes
+        let lastNetTime = self.prevNetTimestamp
         
         Task.detached(priority: .userInitiated) { [weak self] in
             // 1. CPU Mach host statistics
@@ -373,11 +437,20 @@ public final class SystemMonitorService: ObservableObject, @unchecked Sendable {
                 }
             }
             
-            // 2. RAM Mach VM statistics
+            // 2. Thread count & Task count via Darwin sysctl
+            var threadsCount: Int32 = 0
+            var thSize = MemoryLayout<Int32>.size
+            _ = sysctlbyname("kern.num_threads", &threadsCount, &thSize, nil, 0)
+            
+            var tasksCount: Int32 = 0
+            var tSize = MemoryLayout<Int32>.size
+            _ = sysctlbyname("kern.num_tasks", &tasksCount, &tSize, nil, 0)
+            
+            // 3. RAM Mach VM statistics (Activity Monitor algorithm)
             var vmStats = vm_statistics64()
             var vmCount = mach_msg_type_number_t(MemoryLayout<vm_statistics64_data_t>.size / MemoryLayout<integer_t>.size)
             let vmResult = withUnsafeMutablePointer(to: &vmStats) {
-                $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                $0.withMemoryRebound(to: integer_t.self, capacity: Int(vmCount)) {
                     host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &vmCount)
                 }
             }
@@ -389,20 +462,67 @@ public final class SystemMonitorService: ObservableObject, @unchecked Sendable {
             var appRAM: UInt64 = 0
             var wiredRAM: UInt64 = 0
             var compressedRAM: UInt64 = 0
+            var cachedRAM: UInt64 = 0
             
             if vmResult == KERN_SUCCESS {
                 let pageSize = UInt64(vm_kernel_page_size)
+                // App Memory = (internal - purgeable)
                 appRAM = (UInt64(vmStats.internal_page_count) > UInt64(vmStats.purgeable_count))
                     ? (UInt64(vmStats.internal_page_count) - UInt64(vmStats.purgeable_count)) * pageSize
                     : 0
                 wiredRAM = UInt64(vmStats.wire_count) * pageSize
                 compressedRAM = UInt64(vmStats.compressor_page_count) * pageSize
+                // Cached Files = (external + purgeable)
+                cachedRAM = (UInt64(vmStats.external_page_count) + UInt64(vmStats.purgeable_count)) * pageSize
+                
+                // Memory Used = App + Wired + Compressed
                 usedRAM = appRAM + wiredRAM + compressedRAM
                 freeRAM = totalRAM > usedRAM ? (totalRAM - usedRAM) : 0
                 ramP = totalRAM > 0 ? (Double(usedRAM) / Double(totalRAM)) * 100.0 : 0.0
             }
             
-            // 3. SSD statfs
+            // 4. Swap Usage via Darwin sysctl
+            var swap = xsw_usage()
+            var swapSize = MemoryLayout<xsw_usage>.size
+            var swapUsed: UInt64 = 0
+            var swapTotal: UInt64 = 0
+            if sysctlbyname("vm.swapusage", &swap, &swapSize, nil, 0) == 0 {
+                swapUsed = swap.xsu_used
+                swapTotal = swap.xsu_total
+            }
+            
+            // 5. Memory Pressure Level via Darwin sysctl
+            var pressureVal: Int32 = 1
+            var pSize = MemoryLayout<Int32>.size
+            _ = sysctlbyname("kern.memorystatus_vm_pressure_level", &pressureVal, &pSize, nil, 0)
+            let pressureState: MemoryPressureState
+            switch pressureVal {
+            case 2:
+                pressureState = .warning
+            case 4:
+                pressureState = .critical
+            default:
+                pressureState = .normal
+            }
+            
+            // 6. Network Counters via getifaddrs
+            let netTotals = Self.fetchNetworkBytes()
+            let now = Date()
+            var dlSpeed: Double = 0.0
+            var ulSpeed: Double = 0.0
+            if let lastTime = lastNetTime, lastNetIn > 0 {
+                let dt = now.timeIntervalSince(lastTime)
+                if dt > 0.5 {
+                    if netTotals.inBytes >= lastNetIn {
+                        dlSpeed = Double(netTotals.inBytes - lastNetIn) / dt
+                    }
+                    if netTotals.outBytes >= lastNetOut {
+                        ulSpeed = Double(netTotals.outBytes - lastNetOut) / dt
+                    }
+                }
+            }
+            
+            // 7. SSD statfs
             var fs = statfs()
             var ssdP: Double = 0.0
             var usedSSD: UInt64 = 0
@@ -417,15 +537,18 @@ public final class SystemMonitorService: ObservableObject, @unchecked Sendable {
                 ssdP = totalSSD > 0 ? (Double(usedSSD) / Double(totalSSD)) * 100.0 : 0.0
             }
             
-            // 4. Top Processes via ps
+            // 8. Top Processes via ps
             let topLists = Self.fetchTopProcesses(limit: needDetailedProcesses ? 5 : 2, totalRAM: totalRAM)
             
-            // 5. Battery Details via IOKit
+            // 9. Battery Details via IOKit
             let batData = Self.fetchBatteryDetails()
             
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
                 self.prevCpuLoad = cpuLoad
+                self.prevNetInBytes = netTotals.inBytes
+                self.prevNetOutBytes = netTotals.outBytes
+                self.prevNetTimestamp = now
                 
                 // Only update CPU % if we had a previous sample (avoids initial 0 glitch)
                 if previousLoad != nil {
@@ -435,6 +558,9 @@ public final class SystemMonitorService: ObservableObject, @unchecked Sendable {
                     self.cpuIdlePercent = idleP
                 }
                 
+                self.threadCount = Int(threadsCount)
+                self.processCount = Int(tasksCount)
+                
                 self.ramPercent = min(100.0, max(0.0, ramP))
                 self.ramUsedBytes = usedRAM
                 self.ramTotalBytes = totalRAM
@@ -442,6 +568,16 @@ public final class SystemMonitorService: ObservableObject, @unchecked Sendable {
                 self.ramAppBytes = appRAM
                 self.ramWiredBytes = wiredRAM
                 self.ramCompressedBytes = compressedRAM
+                self.ramCachedBytes = cachedRAM
+                self.swapUsedBytes = swapUsed
+                self.swapTotalBytes = swapTotal
+                self.memoryPressureLevel = Int(pressureVal)
+                self.memoryPressureState = pressureState
+                
+                self.downloadSpeedBytesPerSec = dlSpeed
+                self.uploadSpeedBytesPerSec = ulSpeed
+                self.totalDownloadedBytes = netTotals.inBytes
+                self.totalUploadedBytes = netTotals.outBytes
                 
                 self.ssdPercent = min(100.0, max(0.0, ssdP))
                 self.ssdUsedBytes = usedSSD
@@ -472,10 +608,36 @@ public final class SystemMonitorService: ObservableObject, @unchecked Sendable {
         }
     }
     
-    // MARK: - Process Fetching
+    // MARK: - Network Counters via getifaddrs
+    
+    private nonisolated static func fetchNetworkBytes() -> (inBytes: UInt64, outBytes: UInt64) {
+        var ifap: UnsafeMutablePointer<ifaddrs>?
+        var inB: UInt64 = 0
+        var outB: UInt64 = 0
+        
+        guard getifaddrs(&ifap) == 0 else { return (0, 0) }
+        var cur = ifap
+        while let p = cur {
+            let name = String(cString: p.pointee.ifa_name)
+            if Int32(p.pointee.ifa_addr.pointee.sa_family) == AF_LINK {
+                if let data = p.pointee.ifa_data {
+                    let netData = data.assumingMemoryBound(to: if_data.self)
+                    if !name.hasPrefix("lo") {
+                        inB += UInt64(netData.pointee.ifi_ibytes)
+                        outB += UInt64(netData.pointee.ifi_obytes)
+                    }
+                }
+            }
+            cur = p.pointee.ifa_next
+        }
+        freeifaddrs(ifap)
+        return (inB, outB)
+    }
+    
+    // MARK: - Process Fetching (Exact Activity Monitor RSS)
     
     private nonisolated static func fetchTopProcesses(limit: Int, totalRAM: UInt64) -> (cpuList: [MonitoredProcess], ramList: [MonitoredProcess]) {
-        let script = "ps -c -A -o %cpu,%mem,pid,command -r | head -n \(limit + 2); echo '===SPLIT==='; ps -c -A -o %mem,%cpu,pid,command -m | head -n \(limit + 2)"
+        let script = "ps -c -A -o %cpu,rss,pid,command -r | head -n \(limit + 2); echo '===SPLIT==='; ps -c -A -o rss,%cpu,pid,command -m | head -n \(limit + 2)"
         
         let pipe = Pipe()
         let process = Process()
@@ -512,7 +674,7 @@ public final class SystemMonitorService: ObservableObject, @unchecked Sendable {
         
         for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.isEmpty || trimmed.hasPrefix("%CPU") || trimmed.hasPrefix("%MEM") {
+            if trimmed.isEmpty || trimmed.hasPrefix("%CPU") || trimmed.hasPrefix("RSS") {
                 continue
             }
             
@@ -525,12 +687,15 @@ public final class SystemMonitorService: ObservableObject, @unchecked Sendable {
             let rawName = parts.dropFirst(3).joined(separator: " ")
             
             let cpuVal = isCpuSorted ? val1 : val2
-            let memVal = isCpuSorted ? val2 : val1
+            let rssKB = isCpuSorted ? val2 : val1
+            
+            // Exact RSS memory bytes matching Activity Monitor
+            let memBytes = UInt64(rssKB * 1024.0)
+            let memPercent = totalRAM > 0 ? (Double(memBytes) / Double(totalRAM)) * 100.0 : 0.0
             
             // Clean process name
             let (displayName, isApp) = cleanProcessName(rawName: rawName, pid: pid)
             
-            let memBytes = UInt64((memVal / 100.0) * Double(totalRAM))
             let memFormatted: String
             if memBytes >= 1_000_000_000 {
                 memFormatted = String(format: "%.1f GB", Double(memBytes) / 1_000_000_000.0)
@@ -543,7 +708,7 @@ public final class SystemMonitorService: ObservableObject, @unchecked Sendable {
                 name: rawName,
                 displayName: displayName,
                 cpuPercent: cpuVal,
-                memPercent: memVal,
+                memPercent: memPercent,
                 memBytes: memBytes,
                 memFormatted: memFormatted,
                 isApp: isApp
@@ -692,6 +857,12 @@ public final class SystemMonitorService: ObservableObject, @unchecked Sendable {
             button.attributedTitle = NSAttributedString()
             button.title = "⚡\(cpuStr)\(appSuffix)🧠\(ramStr) 💾\(ssdStr)\(batDisplay)"
             
+        case .networkSpeed:
+            let downStr = formatSpeed(downloadSpeedBytesPerSec)
+            let upStr = formatSpeed(uploadSpeedBytesPerSec)
+            button.attributedTitle = NSAttributedString()
+            button.title = "⚡\(cpuStr) 🧠\(ramStr) ↓\(downStr) ↑\(upStr)"
+            
         case .minimal:
             button.attributedTitle = NSAttributedString()
             button.title = "⚡\(cpuStr) 🧠\(ramStr)\(batDisplay)"
@@ -713,8 +884,9 @@ public final class SystemMonitorService: ObservableObject, @unchecked Sendable {
         // Tooltip
         let topRamAppStr = topRAMApp != nil ? "\nTop RAM App: \(topRAMApp!.displayName) (\(topRAMApp!.memFormatted))" : ""
         let topCpuAppStr = topCPUApp != nil ? "\nTop CPU App: \(topCPUApp!.displayName) (\(String(format: "%.1f%%", topCPUApp!.cpuPercent)))" : ""
+        let netTooltip = "\nNetwork: ↓\(formatSpeed(downloadSpeedBytesPerSec))  ↑\(formatSpeed(uploadSpeedBytesPerSec))"
         let batTooltip = hasBattery ? "\nBattery: \(batStr) (\(batteryTimeRemaining)) • Health: \(batteryHealthPercent)% (\(batteryCondition)) • Cycles: \(batteryCycleCount)" : ""
-        button.toolTip = "System Monitor\nCPU: \(cpuStr)\(topCpuAppStr)\nRAM: \(ramStr) (\(formatBytes(ramUsedBytes)) / \(totalRAMFormatted))\(topRamAppStr)\nSSD: \(ssdStr) (\(formatBytes(ssdFreeBytes)) Free of \(totalSSDFormatted))\(batTooltip)\nClick for detailed breakdown."
+        button.toolTip = "System Monitor (Activity Monitor Grade)\nCPU: \(cpuStr) (\(threadCount) threads, \(processCount) tasks)\(topCpuAppStr)\nRAM: \(ramStr) (Pressure: \(memoryPressureState.rawValue) | \(formatBytes(ramUsedBytes)) / \(totalRAMFormatted))\(topRamAppStr)\nSSD: \(ssdStr) (\(formatBytes(ssdFreeBytes)) Free of \(totalSSDFormatted))\(netTooltip)\(batTooltip)\nClick for detailed breakdown."
     }
     
     // MARK: - Battery Telemetry Fetcher
@@ -822,6 +994,8 @@ public final class SystemMonitorService: ObservableObject, @unchecked Sendable {
         return (true, percent, isCharging, isPluggedIn, isCharged, timeRemaining, health, cycles, condition, pwrSource)
     }
     
+    // MARK: - Formatters
+    
     public func formatBytes(_ bytes: UInt64) -> String {
         if bytes >= 1_000_000_000 {
             return String(format: "%.1f GB", Double(bytes) / 1_000_000_000.0)
@@ -829,6 +1003,18 @@ public final class SystemMonitorService: ObservableObject, @unchecked Sendable {
             return String(format: "%.0f MB", Double(bytes) / 1_000_000.0)
         } else {
             return "\(bytes / 1024) KB"
+        }
+    }
+    
+    public func formatSpeed(_ bytesPerSec: Double) -> String {
+        if bytesPerSec >= 1_000_000_000 {
+            return String(format: "%.1f GB/s", bytesPerSec / 1_000_000_000.0)
+        } else if bytesPerSec >= 1_000_000 {
+            return String(format: "%.1f MB/s", bytesPerSec / 1_000_000.0)
+        } else if bytesPerSec >= 1_000 {
+            return String(format: "%.0f KB/s", bytesPerSec / 1_000.0)
+        } else {
+            return String(format: "%.0f B/s", bytesPerSec)
         }
     }
 }

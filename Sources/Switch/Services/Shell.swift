@@ -9,13 +9,12 @@ public enum Shell {
         task.standardOutput = pipe
         task.standardError = pipe
         task.arguments = ["-c", command]
-        task.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        task.executableURL = URL(fileURLWithPath: "/bin/sh")
         
         do {
             try task.run()
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            var status: Int32 = 0
-            waitpid(task.processIdentifier, &status, 0)
+            task.waitUntilExit()
             return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         } catch {
             return ""
