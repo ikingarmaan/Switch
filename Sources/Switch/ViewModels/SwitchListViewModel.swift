@@ -10,8 +10,61 @@ public final class SwitchListViewModel: ObservableObject {
     private var timer: AnyCancellable?
     private let controlService = SystemControlService.shared
     
+    @Published public var searchText: String = ""
+    
     public var visibleSwitches: [SwitchItem] {
-        switches.filter { AppSettings.shared.isSwitchEnabled($0.type) }
+        let enabled = switches.filter { AppSettings.shared.isSwitchEnabled($0.type) }
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !query.isEmpty else { return enabled }
+        
+        return enabled.filter { item in
+            if item.title.localizedCaseInsensitiveContains(query) { return true }
+            if let sub = item.subtitle, sub.localizedCaseInsensitiveContains(query) { return true }
+            if item.type.rawValue.localizedCaseInsensitiveContains(query) { return true }
+            
+            // Search aliases/keywords for faster discovery
+            let keywords = searchKeywords(for: item.type)
+            return keywords.contains { $0.localizedCaseInsensitiveContains(query) }
+        }
+    }
+    
+    private func searchKeywords(for type: SwitchType) -> [String] {
+        switch type {
+        case .hideDesktop: return ["desktop", "icons", "clean", "hide"]
+        case .keepAwake: return ["caffeine", "sleep", "awake", "screen", "stay"]
+        case .screenSaver: return ["screensaver", "saver", "idle", "display"]
+        case .nightShift: return ["blue", "warm", "orange", "night", "dark", "display", "eyes"]
+        case .autohideDock: return ["dock", "bar", "hide dock", "auto hide"]
+        case .autohideMenuBar: return ["menubar", "menu bar", "top bar", "hide menubar"]
+        case .hiddenFiles: return ["dotfiles", "hidden", "finder", "show files", "secret"]
+        case .lockKeyboard: return ["keyboard", "keys", "cleaning", "cat", "lock keys"]
+        case .cameraPreview: return ["webcam", "camera", "video", "mirror", "selfie"]
+        case .timer: return ["countdown", "alarm", "stopwatch", "clock", "remind"]
+        case .amphetamine: return ["lid", "clamshell", "keep awake", "macbook closed", "sleep"]
+        case .mouseJiggler: return ["mouse", "jiggle", "mover", "cursor", "afk", "slack", "teams"]
+        case .autoScroll: return ["scroll", "reading", "handsfree", "autoscroll", "page"]
+        case .googlyEyes: return ["eyes", "cursor follow", "fun", "pupils", "look"]
+        case .volumeBoost: return ["sound", "audio", "speaker", "loud", "amplifier", "boost", "200%"]
+        case .systemMonitor: return ["activity monitor", "cpu", "ram", "memory", "battery", "disk", "stats", "hardware"]
+        case .loomRecorder: return ["screen recording", "record", "loom", "video", "capture", "mic"]
+        case .forceQuitApps: return ["kill", "quit", "close all", "task manager", "exit apps"]
+        case .autoVPN: return ["vpn", "tunnel", "privacy", "secure", "proxy", "network"]
+        case .tidyFolders: return ["cleanup", "organize", "downloads", "desktop", "sort"]
+        case .adblockDNS: return ["dns", "adblock", "privacy", "block ads", "cloudflare", "quad9"]
+        case .knockScreenshot: return ["screenshot", "snip", "capture", "screen", "knock"]
+        case .clipboardManager: return ["clipboard", "history", "copy", "paste", "snippets"]
+        case .stickyNotes: return ["notes", "sticky", "memo", "todo", "post it"]
+        case .locationServices: return ["gps", "location", "privacy", "where", "tracking"]
+        case .ramGpuReset: return ["ram clean", "purge", "memory leak", "free ram", "flush"]
+        case .cleanMacCache: return ["cache", "clean disk", "free space", "junk", "logs", "storage"]
+        case .autoWallpaper: return ["wallpaper", "background", "desktop image", "unsplash", "theme"]
+        case .wisprFlow: return ["voice", "dictation", "transcribe", "speech", "whisper", "ai typing"]
+        case .dockDoor: return ["window preview", "dock peek", "thumbnails", "alt tab"]
+        case .mouseBoostPro: return ["mouse acceleration", "gaming", "smooth cursor", "dpi", "speed"]
+        case .ultraPowerSave: return ["battery saver", "eco", "low power", "throttle", "save battery"]
+        case .textGrabber: return ["ocr", "copy text", "extract text", "image text", "video text"]
+        default: return []
+        }
     }
     
     private var cancellables = Set<AnyCancellable>()

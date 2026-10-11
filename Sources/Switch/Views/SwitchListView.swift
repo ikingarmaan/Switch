@@ -18,30 +18,87 @@ public struct SwitchListView: View {
                 Spacer()
             }
             
+            // Search Bar
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundColor(viewModel.searchText.isEmpty ? Color.gray.opacity(0.8) : Color(red: 0.28, green: 0.76, blue: 0.52))
+                
+                TextField("Search switches...", text: $viewModel.searchText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12.5, weight: .regular))
+                    .foregroundColor(.white)
+                
+                if !viewModel.searchText.isEmpty {
+                    Button(action: {
+                        viewModel.searchText = ""
+                    }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 11.5))
+                            .foregroundColor(Color.gray.opacity(0.8))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Clear search")
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.white.opacity(0.07))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                    )
+            )
+            .padding(.horizontal, 10)
+            .padding(.bottom, 6)
+            
             // Switch List
             ScrollView(showsIndicators: false) {
-                VStack(spacing: 0) {
-                    ForEach(viewModel.visibleSwitches) { item in
-                        SwitchRowView(
-                            item: item,
-                            onToggle: { newValue in
-                                viewModel.toggleSwitch(item: item, newValue: newValue)
-                            },
-                            onAction: {
-                                viewModel.triggerAction(type: item.type)
+                if viewModel.visibleSwitches.isEmpty && !viewModel.searchText.isEmpty {
+                    VStack(spacing: 6) {
+                        Image(systemName: "questionmark.folder")
+                            .font(.system(size: 22))
+                            .foregroundColor(Color.gray.opacity(0.6))
+                            .padding(.top, 24)
+                        Text("No switches match \"\(viewModel.searchText)\"")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(Color.white.opacity(0.8))
+                        Button("Clear Search") {
+                            viewModel.searchText = ""
+                        }
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(Color(red: 0.28, green: 0.76, blue: 0.52))
+                        .buttonStyle(.plain)
+                        .padding(.top, 2)
+                        .padding(.bottom, 24)
+                    }
+                    .frame(maxWidth: .infinity)
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(viewModel.visibleSwitches) { item in
+                            SwitchRowView(
+                                item: item,
+                                onToggle: { newValue in
+                                    viewModel.toggleSwitch(item: item, newValue: newValue)
+                                },
+                                onAction: {
+                                    viewModel.triggerAction(type: item.type)
+                                }
+                            )
+                            
+                            if item.id != viewModel.visibleSwitches.last?.id {
+                                Rectangle()
+                                    .fill(Color.white.opacity(0.06))
+                                    .frame(height: 1)
+                                    .padding(.horizontal, 10)
                             }
-                        )
-                        
-                        if item.id != viewModel.visibleSwitches.last?.id {
-                            Rectangle()
-                                .fill(Color.white.opacity(0.06))
-                                .frame(height: 1)
-                                .padding(.horizontal, 10)
                         }
                     }
+                    .padding(.vertical, 2)
+                    .padding(.horizontal, 6)
                 }
-                .padding(.vertical, 2)
-                .padding(.horizontal, 6)
             }
             .frame(maxHeight: 680)
             
