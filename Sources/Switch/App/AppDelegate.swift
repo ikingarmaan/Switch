@@ -144,10 +144,16 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
         
         // switch://toggle/<type> or switch://action/<type>
         let targetTypeRaw = !path.isEmpty ? path : host
+        triggerSwitchAction(target: targetTypeRaw)
+    }
+    
+    public func triggerSwitchAction(target: String) {
+        let cleanTarget = target.trimmingCharacters(in: CharacterSet(charactersIn: "/")).lowercased()
+        
         if let matchedType = SwitchType.allCases.first(where: {
-            $0.rawValue.lowercased() == targetTypeRaw ||
-            $0.title.lowercased() == targetTypeRaw ||
-            $0.rawValue.lowercased() == host
+            $0.rawValue.lowercased() == cleanTarget ||
+            $0.title.lowercased() == cleanTarget ||
+            cleanTarget.contains($0.rawValue.lowercased())
         }) {
             if matchedType.isActionOnly {
                 SwitchListViewModel.shared.triggerAction(type: matchedType)
@@ -194,6 +200,18 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
             object: nil
         )
         DistributedNotificationCenter.default().addObserver(
+            forName: NSNotification.Name("com.armank.switch.toggleSwitch"),
+            object: nil,
+            queue: .main
+        ) { [weak self] notif in
+            guard let self = self else { return }
+            if let target = notif.object as? String {
+                Task { @MainActor in
+                    self.triggerSwitchAction(target: target)
+                }
+            }
+        }
+        DistributedNotificationCenter.default().addObserver(
             forName: NSNotification.Name("com.armank.switch.togglePopover"),
             object: nil,
             queue: .main
@@ -212,6 +230,20 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
         ) { _ in
             ClipboardService.shared.toggleWindow()
         }
+        
+        // Native AppleEvent URL scheme registration
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleGetURLEvent(_:withReplyEvent:)),
+            forEventClass: AEEventClass(kInternetEventClass),
+            andEventID: AEEventID(kAEGetURL)
+        )
+    }
+    
+    @objc private func handleGetURLEvent(_ event: NSAppleEventDescriptor, withReplyEvent replyEvent: NSAppleEventDescriptor) {
+        guard let urlString = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue,
+              let url = URL(string: urlString) else { return }
+        handleDeepLink(url: url)
     }
     
     @objc private func timerTickReceived(_ notification: Notification) {

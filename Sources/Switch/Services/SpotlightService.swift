@@ -90,7 +90,10 @@ public final class SpotlightService: @unchecked Sendable {
                 let execURL = macosURL.appendingPathComponent("SwitchRunner")
                 let scriptContent = """
                 #!/bin/sh
-                open -g "switch://toggle/\(type.rawValue)"
+                # 1. Direct AppleScript distributed notification for instant execution
+                osascript -e 'tell application id "com.armank.switch" to activate' 2>/dev/null
+                /usr/bin/open -b "com.armank.switch" "switch://toggle/\(type.rawValue)" 2>/dev/null || open "switch://toggle/\(type.rawValue)"
+                exit 0
                 """
                 try scriptContent.write(to: execURL, atomically: true, encoding: .utf8)
                 try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: execURL.path)
