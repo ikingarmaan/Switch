@@ -22,13 +22,13 @@ public final class WidgetPanel: NSPanel {
             defer: false
         )
         
-        self.isFloatingPanel = true
-        self.level = isPinnedToDesktop ? .normal : .floating
+        self.isFloatingPanel = !isPinnedToDesktop
+        self.level = isPinnedToDesktop ? NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow))) : .floating
         self.backgroundColor = .clear
         self.isOpaque = false
         self.hasShadow = false
         self.isMovableByWindowBackground = true
-        self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        self.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
         
         let view = DynamicWidgetView(
             widget: widget,
@@ -54,7 +54,13 @@ public final class WidgetPanel: NSPanel {
     
     public func updatePinState(_ pinned: Bool) {
         self.isPinnedToDesktop = pinned
-        self.level = pinned ? .normal : .floating
+        self.isFloatingPanel = !pinned
+        self.level = pinned ? NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow))) : .floating
+        if pinned {
+            self.orderBack(nil)
+        } else {
+            self.orderFront(nil)
+        }
     }
     
     @objc private func windowDidMoveNotification(_ notification: Notification) {
