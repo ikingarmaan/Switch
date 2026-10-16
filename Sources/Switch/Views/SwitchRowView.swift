@@ -2820,22 +2820,58 @@ public struct SwitchRowView: View {
                         }
                     }
                 } else if item.type == .customWidgets {
-                    Button(action: {
-                        WidgetStudioService.shared.openStudio()
-                    }) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "sparkles")
-                                .font(.system(size: 10, weight: .semibold))
-                            Text(item.subtitle ?? "Studio")
-                                .font(.system(size: 11.5, weight: item.isOn ? .bold : .medium, design: .rounded))
+                    let ws = WidgetStudioService.shared
+                    Menu {
+                        Button(action: {
+                            ws.openStudio()
+                        }) {
+                            HStack {
+                                Text("Open AI Widget Studio...")
+                                Image(systemName: "sparkles")
+                            }
                         }
-                        .foregroundColor(item.isOn ? Color(red: 0.28, green: 0.76, blue: 0.52) : Color.gray.opacity(0.85))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(RoundedRectangle(cornerRadius: 5).fill(Color.white.opacity(0.06)))
+                        
+                        Divider()
+                        
+                        Button(action: {
+                            ws.toggleAllWidgets(true)
+                        }) {
+                            HStack {
+                                Text("Show All Widgets")
+                                Image(systemName: "eye.fill")
+                            }
+                        }
+                        
+                        Button(action: {
+                            ws.toggleAllWidgets(false)
+                        }) {
+                            HStack {
+                                Text("Hide All Widgets")
+                                Image(systemName: "eye.slash.fill")
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 3) {
+                            Text(item.subtitle ?? ws.statusSubtitle)
+                                .font(.system(size: 12, weight: item.isOn ? .bold : .medium, design: .rounded))
+                                .foregroundColor(item.isOn ? Color(red: 0.28, green: 0.76, blue: 0.52) : Color.gray.opacity(0.85))
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 8))
+                                .foregroundColor(Color.gray.opacity(0.6))
+                        }
                     }
-                    .buttonStyle(.plain)
-                    .help("Open AI Widget Studio")
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .contextMenu {
+                        Button(action: {
+                            ws.openStudio()
+                        }) {
+                            HStack {
+                                Text("Open AI Widget Studio...")
+                                Image(systemName: "sparkles")
+                            }
+                        }
+                    }
                 } else if let subtitle = item.subtitle, !subtitle.isEmpty {
                     Text(subtitle)
                         .font(.system(size: 12, weight: .regular))

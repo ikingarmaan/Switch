@@ -7,68 +7,90 @@ public struct SwitchListView: View {
     
     public var body: some View {
         VStack(spacing: 0) {
-            // Top Notch / Accent Pill Indicator (as seen in screenshot)
+            // Top Accent Notch
             HStack {
                 Spacer()
-                RoundedRectangle(cornerRadius: 3)
-                    .fill(Color(red: 0.28, green: 0.76, blue: 0.52))
-                    .frame(width: 48, height: 4)
-                    .padding(.top, 5)
-                    .padding(.bottom, 6)
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color(red: 0.28, green: 0.76, blue: 0.52).opacity(0.6))
+                    .frame(width: 36, height: 3)
+                    .padding(.top, 4)
+                    .padding(.bottom, 5)
                 Spacer()
             }
             
-            // Search Bar
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 11.5, weight: .semibold))
-                    .foregroundColor(viewModel.searchText.isEmpty ? Color.gray.opacity(0.8) : Color(red: 0.28, green: 0.76, blue: 0.52))
-                
-                TextField("Search switches...", text: $viewModel.searchText)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 12.5, weight: .regular))
-                    .foregroundColor(.white)
-                    .onSubmit {
-                        if let firstMatch = viewModel.visibleSwitches.first {
-                            if firstMatch.isActionOnly {
-                                viewModel.triggerAction(type: firstMatch.type)
-                            } else {
-                                viewModel.toggleSwitch(item: firstMatch, newValue: !firstMatch.isOn)
+            // Search Bar & AI Widgets Quick Button
+            HStack(spacing: 6) {
+                HStack(spacing: 7) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundColor(viewModel.searchText.isEmpty ? Color.gray.opacity(0.8) : Color(red: 0.28, green: 0.76, blue: 0.52))
+                    
+                    TextField("Search switches...", text: $viewModel.searchText)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 12.5, weight: .regular))
+                        .foregroundColor(.white)
+                        .onSubmit {
+                            if let firstMatch = viewModel.visibleSwitches.first {
+                                if firstMatch.isActionOnly {
+                                    viewModel.triggerAction(type: firstMatch.type)
+                                } else {
+                                    viewModel.toggleSwitch(item: firstMatch, newValue: !firstMatch.isOn)
+                                }
                             }
                         }
+                    
+                    if !viewModel.searchText.isEmpty {
+                        Button(action: {
+                            viewModel.searchText = ""
+                        }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 11.5))
+                                .foregroundColor(Color.gray.opacity(0.8))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Clear search")
+                    } else {
+                        Text("⌘⇧S")
+                            .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                            .foregroundColor(Color.gray.opacity(0.7))
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1.5)
+                            .background(Color.white.opacity(0.06))
+                            .cornerRadius(3)
+                            .help("Global shortcut: Command+Shift+S")
                     }
-                
-                if !viewModel.searchText.isEmpty {
-                    Button(action: {
-                        viewModel.searchText = ""
-                    }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 11.5))
-                            .foregroundColor(Color.gray.opacity(0.8))
-                    }
-                    .buttonStyle(.plain)
-                    .help("Clear search")
-                } else {
-                    Text("⌘⇧S")
-                        .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
-                        .foregroundColor(Color.gray.opacity(0.7))
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1.5)
-                        .background(Color.white.opacity(0.06))
-                        .cornerRadius(3)
-                        .help("Global shortcut: Command+Shift+S")
                 }
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5.5)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.white.opacity(0.07))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                        )
+                )
+                
+                // AI Desktop Widgets Studio Button
+                Button(action: {
+                    WidgetStudioService.shared.openStudio()
+                }) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(Color(red: 0.28, green: 0.76, blue: 0.52))
+                        .frame(width: 27, height: 27)
+                        .background(
+                            RoundedRectangle(cornerRadius: 7)
+                                .fill(Color.white.opacity(0.07))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 7)
+                                        .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                                )
+                        )
+                }
+                .buttonStyle(.plain)
+                .help("AI Desktop Widgets — Customize desktop widgets with a single prompt")
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.white.opacity(0.07))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.white.opacity(0.10), lineWidth: 1)
-                    )
-            )
             .padding(.horizontal, 10)
             .padding(.bottom, 6)
             
@@ -173,23 +195,6 @@ public struct SwitchListView: View {
                     .background(RoundedRectangle(cornerRadius: 5).fill(Color.white.opacity(0.08)))
                 }
                 .buttonStyle(.plain)
-                
-                // AI Widgets Button
-                Button(action: {
-                    WidgetStudioService.shared.openStudio()
-                }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "sparkles")
-                        Text("Widgets")
-                    }
-                    .font(.system(size: 11.5, weight: .semibold))
-                    .foregroundColor(Color(red: 0.28, green: 0.76, blue: 0.52))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(RoundedRectangle(cornerRadius: 5).fill(Color(red: 0.28, green: 0.76, blue: 0.52).opacity(0.12)))
-                }
-                .buttonStyle(.plain)
-                .help("AI Desktop Widget Studio - Prompt to Mac Widgets")
                 
                 Spacer()
                 

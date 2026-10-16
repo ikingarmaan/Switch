@@ -58,6 +58,7 @@ public final class DynamicWidgetViewState: ObservableObject {
     @Published public var quoteIndex: Int = 0
     @Published public var cpuVal: Int = 24
     @Published public var ramVal: Int = 58
+    @Published public var isHovered: Bool = false
     
     public init() {}
 }
@@ -83,64 +84,11 @@ public struct DynamicWidgetView: View {
     }
     
     public var body: some View {
-        VStack(spacing: 0) {
-            // Header Bar (Window controls + Native Drag Area)
-            ZStack {
-                // Background native drag area spanning the header
-                WidgetDragAreaView()
-                
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(accentColor)
-                        .frame(width: 7, height: 7)
-                        .shadow(color: accentColor.opacity(0.8), radius: 3)
-                        .allowsHitTesting(false)
-                    
-                    Text(widget.name.uppercased())
-                        .font(.system(size: 10.5, weight: .bold))
-                        .foregroundColor(.white.opacity(0.8))
-                        .tracking(0.6)
-                        .lineLimit(1)
-                        .allowsHitTesting(false)
-                    
-                    // Subtle drag handle grip
-                    Image(systemName: "line.3.horizontal")
-                        .font(.system(size: 8, weight: .bold))
-                        .foregroundColor(.white.opacity(0.35))
-                        .allowsHitTesting(false)
-                    
-                    Spacer()
-                        .allowsHitTesting(false)
-                    
-                    // Pin button
-                    Button(action: onTogglePin) {
-                        Image(systemName: widget.isPinnedToDesktop ? "pin.fill" : "pin.slash")
-                            .font(.system(size: 10))
-                            .foregroundColor(widget.isPinnedToDesktop ? accentColor : .white.opacity(0.6))
-                            .padding(4)
-                            .background(RoundedRectangle(cornerRadius: 4).fill(Color.white.opacity(0.08)))
-                    }
-                    .buttonStyle(.plain)
-                    .help(widget.isPinnedToDesktop ? "Pinned to Desktop (Click to float)" : "Floating Window (Click to pin)")
-                    
-                    // Close button
-                    Button(action: onClose) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundColor(.white.opacity(0.7))
-                            .padding(4)
-                            .background(RoundedRectangle(cornerRadius: 4).fill(Color.white.opacity(0.08)))
-                    }
-                    .buttonStyle(.plain)
-                    .help("Close Widget")
-                }
-            }
-            .frame(height: 26)
-            .padding(.horizontal, 14)
-            .padding(.top, 8)
-            .padding(.bottom, 6)
+        ZStack {
+            // 1. Native Window Drag Area filling the entire card surface
+            WidgetDragAreaView()
             
-            // Content Body
+            // 2. Pure Widget Content (Spacious, beautifully centered)
             Group {
                 switch widget.category {
                 case "clock":
@@ -168,28 +116,81 @@ public struct DynamicWidgetView: View {
                 }
             }
             .allowsHitTesting(isContentInteractive)
-            .padding(.horizontal, 14)
-            .padding(.bottom, 12)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 14)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            
+            // 3. Subtle Floating Window Controls (Smooth on hover, native macOS widget style)
+            VStack {
+                HStack(spacing: 6) {
+                    // Title badge on hover
+                    HStack(spacing: 5) {
+                        Circle()
+                            .fill(accentColor)
+                            .frame(width: 6, height: 6)
+                            .shadow(color: accentColor.opacity(0.8), radius: 3)
+                        Text(widget.name)
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.9))
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(Color.black.opacity(0.45)))
+                    .allowsHitTesting(false)
+                    
+                    Spacer()
+                    
+                    // Pin / Float button
+                    Button(action: onTogglePin) {
+                        Image(systemName: widget.isPinnedToDesktop ? "pin.fill" : "pin.slash")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(widget.isPinnedToDesktop ? accentColor : .white.opacity(0.85))
+                            .frame(width: 24, height: 24)
+                            .background(Circle().fill(Color.black.opacity(0.45)))
+                    }
+                    .buttonStyle(.plain)
+                    .help(widget.isPinnedToDesktop ? "Pinned to Wallpaper (Click to float)" : "Floating Window (Click to pin)")
+                    
+                    // Close button
+                    Button(action: onClose) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 9.5, weight: .bold))
+                            .foregroundColor(.white.opacity(0.85))
+                            .frame(width: 24, height: 24)
+                            .background(Circle().fill(Color.black.opacity(0.45)))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Close Widget")
+                }
+                .opacity(state.isHovered ? 1.0 : 0.0)
+                .animation(.easeInOut(duration: 0.16), value: state.isHovered)
+                .padding(.horizontal, 12)
+                .padding(.top, 10)
+                
+                Spacer()
+            }
         }
         .frame(width: widget.width, height: widget.height)
         .background(
             ZStack {
                 VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
                 backgroundGradient
-                WidgetDragAreaView()
             }
         )
-        .cornerRadius(18)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 18)
-                .stroke(Color.white.opacity(0.18), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(Color.white.opacity(0.14), lineWidth: 1)
                 .allowsHitTesting(false)
         )
-        .shadow(color: Color.black.opacity(0.4), radius: 16, x: 0, y: 8)
+        .shadow(color: Color.black.opacity(0.35), radius: 20, x: 0, y: 10)
+        .onHover { hovering in
+            state.isHovered = hovering
+        }
         .contextMenu {
             Button(action: onTogglePin) {
                 Label(
-                    widget.isPinnedToDesktop ? "Float on Top" : "Pin to Desktop",
+                    widget.isPinnedToDesktop ? "Float on Top" : "Pin to Wallpaper",
                     systemImage: widget.isPinnedToDesktop ? "arrow.up.and.line.horizontal.and.arrow.down" : "pin.fill"
                 )
             }
@@ -257,7 +258,7 @@ public struct DynamicWidgetView: View {
     // MARK: - 1. Clock View
     
     private var clockContent: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 18) {
             // Analog Clock
             ZStack {
                 Circle()
@@ -271,29 +272,29 @@ public struct DynamicWidgetView: View {
                     .fill(accentColor)
                     .frame(width: 6, height: 6)
             }
-            .frame(width: 80, height: 80)
+            .frame(width: 86, height: 86)
             
             // Digital Box
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(greetingText)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 11.5, weight: .medium))
                     .foregroundColor(.white.opacity(0.6))
                 
                 Text(formattedTime(state.currentTime))
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
                 
                 Text(formattedDate(state.currentTime))
-                    .font(.system(size: 10.5, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(.white.opacity(0.85))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2.5)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
                     .background(Color.white.opacity(0.1))
-                    .cornerRadius(4)
+                    .cornerRadius(5)
             }
             Spacer()
         }
-        .frame(maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     
     private var greetingText: String {
