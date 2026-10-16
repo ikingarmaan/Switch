@@ -60,6 +60,14 @@ public final class DynamicWidgetViewState: ObservableObject {
     @Published public var ramVal: Int = 58
     @Published public var isHovered: Bool = false
     
+    // Dynamic AI Component State
+    @Published public var dynamicProgress: Double = 0
+    @Published public var dynamicCurrencyInput: String = "100"
+    @Published public var dynamicNoteText: String = ""
+    @Published public var dynamicToggles: [String: Bool] = [:]
+    @Published public var copiedToast: Bool = false
+    @Published public var isInitialized: Bool = false
+    
     public init() {}
 }
 
@@ -69,6 +77,7 @@ public struct DynamicWidgetView: View {
     public let onTogglePin: () -> Void
     
     @StateObject private var state = DynamicWidgetViewState()
+    @ObservedObject private var sysMonitor = SystemMonitorService.shared
     
     private let quotes = [
         ("Simplicity is the ultimate sophistication.", "Leonardo da Vinci"),
@@ -90,29 +99,33 @@ public struct DynamicWidgetView: View {
             
             // 2. Pure Widget Content (Spacious, beautifully centered)
             Group {
-                switch widget.category {
-                case "clock":
-                    clockContent
-                case "crypto":
-                    cryptoContent
-                case "pomodoro":
-                    pomodoroContent
-                case "gauges":
-                    gaugesContent
-                case "todo":
-                    todoContent
-                case "weather":
-                    weatherContent
-                case "habit":
-                    habitContent
-                case "calc":
-                    calculatorContent
-                case "countdown":
-                    countdownContent
-                case "quote":
-                    quoteContent
-                default:
-                    customContent
+                if let comps = resolvedComponents, !comps.isEmpty {
+                    dynamicComponentsView(comps: comps)
+                } else {
+                    switch widget.category {
+                    case "clock":
+                        clockContent
+                    case "crypto":
+                        cryptoContent
+                    case "pomodoro":
+                        pomodoroContent
+                    case "gauges":
+                        gaugesContent
+                    case "todo":
+                        todoContent
+                    case "weather":
+                        weatherContent
+                    case "habit":
+                        habitContent
+                    case "calc":
+                        calculatorContent
+                    case "countdown":
+                        countdownContent
+                    case "quote":
+                        quoteContent
+                    default:
+                        customContent
+                    }
                 }
             }
             .allowsHitTesting(isContentInteractive)
@@ -210,9 +223,46 @@ public struct DynamicWidgetView: View {
                 self.state.pomoSeconds -= 1
             }
         }
+        .onAppear {
+            initDynamicComponentsIfNeeded()
+        }
+    }
+    
+    private var resolvedComponents: [WidgetComponent]? {
+        if let comps = widget.components, !comps.isEmpty {
+            return comps
+        }
+        if widget.category == "ai_generated" || widget.category == "custom" {
+            return WidgetGenerator.shared.generate(from: widget.prompt, theme: widget.theme).components
+        }
+        return nil
+    }
+    
+    private func initDynamicComponentsIfNeeded() {
+        guard !state.isInitialized else { return }
+        state.isInitialized = true
+        if let comps = resolvedComponents {
+            for comp in comps {
+                if comp.type == .progressBar, let val = comp.progressValue {
+                    state.dynamicProgress = val
+                }
+                if comp.type == .textNote, let note = comp.noteText {
+                    state.dynamicNoteText = note
+                }
+                if comp.type == .toggleList, let toggles = comp.toggles {
+                    for t in toggles {
+                        state.dynamicToggles[t.id] = t.isOn
+                    }
+                }
+            }
+        }
+        SystemMonitorService.shared.sampleMetrics()
     }
     
     private var isContentInteractive: Bool {
+        if widget.category == "ai_generated" || (resolvedComponents != nil && !resolvedComponents!.isEmpty) {
+            return true
+        }
         switch widget.category {
         case "pomodoro", "todo", "habit", "calc", "quote":
             return true
@@ -706,42 +756,650 @@ public struct DynamicWidgetView: View {
         .buttonStyle(.plain)
     }
     
-    // MARK: - 11. Custom Content
+    // MARK: - 11. Dynamic AI Generated Components Engine
+    
+    private func dynamicComponentsView(comps: [WidgetComponent]) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            ForEach(Array(comps.enumerated()), id: \.offset) { _, comp in
+                switch comp.type {
+                case .header:
+                    dynamicHeaderView(comp)
+                case .metricsGrid:
+                    dynamicMetricsView(comp)
+                case .progressBar:
+                    dynamicProgressBarView(comp)
+                case .actionButtons:
+                    dynamicActionButtonsView(comp)
+                case .toggleList:
+                    dynamicToggleListView(comp)
+                case .liveSystemStat:
+                    dynamicSystemStatView(comp)
+                case .currencyCalc:
+                    dynamicCurrencyCalcView(comp)
+                case .worldClocks:
+                    dynamicWorldClocksView(comp)
+                case .quickApps:
+                    dynamicQuickAppsView(comp)
+                case .textNote:
+                    dynamicTextNoteView(comp)
+                case .quote:
+                    dynamicQuoteView(comp)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+    
+    // MARK: - Component Subviews
+    
+    private func dynamicHeaderView(_ comp: WidgetComponent) -> some View {
+        HStack(spacing: 8) {
+            if let icon = comp.icon, !icon.isEmpty {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(accentColor.opacity(0.18))
+                        .frame(width: 26, height: 26)
+                    Image(systemName: icon)
+                        .font(.system(size: 12.5, weight: .bold))
+                        .foregroundColor(accentColor)
+                }
+            }
+            
+            VStack(alignment: .leading, spacing: 1) {
+                Text(comp.title ?? widget.name)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                
+                if let subtitle = comp.subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundColor(.white.opacity(0.55))
+                        .lineLimit(1)
+                }
+            }
+            
+            Spacer()
+        }
+    }
+    
+    private func dynamicMetricsView(_ comp: WidgetComponent) -> some View {
+        guard let metrics = comp.metrics, !metrics.isEmpty else { return AnyView(EmptyView()) }
+        
+        return AnyView(
+            HStack(spacing: 6) {
+                ForEach(Array(metrics.enumerated()), id: \.offset) { _, metric in
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 4) {
+                            if let icon = metric.icon {
+                                Image(systemName: icon)
+                                    .font(.system(size: 8.5, weight: .bold))
+                                    .foregroundColor(colorFromHex(metric.colorHex) ?? accentColor)
+                            }
+                            Text(metric.label)
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundColor(.white.opacity(0.55))
+                                .tracking(0.5)
+                        }
+                        
+                        Text(metric.value)
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundColor(colorFromHex(metric.colorHex) ?? .white)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                        
+                        if let sub = metric.subtext {
+                            Text(sub)
+                                .font(.system(size: 7.5))
+                                .foregroundColor(.white.opacity(0.4))
+                                .lineLimit(1)
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.white.opacity(0.06))
+                    .cornerRadius(8)
+                }
+            }
+        )
+    }
+    
+    private func dynamicProgressBarView(_ comp: WidgetComponent) -> some View {
+        let maxVal = comp.progressMax ?? 100
+        let currentVal = state.dynamicProgress
+        let pct = maxVal > 0 ? min(max(currentVal / maxVal, 0.0), 1.0) : 0.0
+        let color = colorFromHex(comp.progressColorHex) ?? accentColor
+        
+        return VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text(comp.title ?? "Goal Progress")
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.7))
+                Spacer()
+                Text("\(Int(currentVal)) / \(Int(maxVal)) \(comp.progressUnit ?? "")")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundColor(color)
+            }
+            
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.white.opacity(0.12))
+                        .frame(height: 7)
+                    
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [color, color.opacity(0.75)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: max(geo.size.width * CGFloat(pct), 4), height: 7)
+                        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: pct)
+                }
+            }
+            .frame(height: 7)
+        }
+    }
+    
+    private func dynamicActionButtonsView(_ comp: WidgetComponent) -> some View {
+        guard let buttons = comp.buttons, !buttons.isEmpty else { return AnyView(EmptyView()) }
+        
+        return AnyView(
+            HStack(spacing: 6) {
+                ForEach(buttons, id: \.id) { btn in
+                    Button(action: {
+                        handleActionButton(btn: btn)
+                    }) {
+                        HStack(spacing: 4) {
+                            if let icon = btn.icon {
+                                Image(systemName: icon)
+                                    .font(.system(size: 9.5, weight: .bold))
+                            }
+                            Text(btn.label)
+                                .font(.system(size: 10, weight: .semibold))
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .fill(Color.white.opacity(0.12))
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+                Spacer()
+            }
+        )
+    }
+    
+    private func dynamicSystemStatView(_ comp: WidgetComponent) -> some View {
+        let type = comp.systemStatType ?? "battery"
+        
+        return HStack(spacing: 8) {
+            switch type {
+            case "battery":
+                HStack(spacing: 10) {
+                    ZStack {
+                        Circle()
+                            .fill(sysMonitor.isCharging ? Color.green.opacity(0.2) : accentColor.opacity(0.18))
+                            .frame(width: 34, height: 34)
+                        Image(systemName: sysMonitor.isCharging ? "bolt.batteryblock.fill" : "battery.100")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundColor(sysMonitor.isCharging ? .green : accentColor)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text("\(sysMonitor.batteryPercent)%")
+                                .font(.system(size: 15, weight: .heavy, design: .rounded))
+                                .foregroundColor(.white)
+                            if sysMonitor.isCharging {
+                                Text("CHARGING")
+                                    .font(.system(size: 7.5, weight: .heavy))
+                                    .foregroundColor(.green)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1.5)
+                                    .background(Capsule().fill(Color.green.opacity(0.2)))
+                            }
+                        }
+                        Text("\(sysMonitor.batteryCondition) • \(sysMonitor.batteryCycleCount) Cycles • \(sysMonitor.batteryHealthPercent)% Health")
+                            .font(.system(size: 8.5))
+                            .foregroundColor(.white.opacity(0.6))
+                    }
+                    Spacer()
+                }
+                
+            case "cpu":
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(Int(sysMonitor.cpuPercent))%")
+                            .font(.system(size: 15, weight: .heavy, design: .rounded))
+                            .foregroundColor(accentColor)
+                        Text("CPU LOAD")
+                            .font(.system(size: 7.5, weight: .bold))
+                            .foregroundColor(.white.opacity(0.5))
+                    }
+                    
+                    Divider().frame(height: 22).background(Color.white.opacity(0.15))
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(sysMonitor.chipName.isEmpty ? "Apple Silicon" : sysMonitor.chipName)
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .foregroundColor(.white)
+                            .lineLimit(1)
+                        Text("\(sysMonitor.coreCount) Cores • \(sysMonitor.threadCount) Threads")
+                            .font(.system(size: 8))
+                            .foregroundColor(.white.opacity(0.55))
+                    }
+                    Spacer()
+                }
+                
+            case "ram":
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(Int(sysMonitor.ramPercent))%")
+                            .font(.system(size: 15, weight: .heavy, design: .rounded))
+                            .foregroundColor(sysMonitor.memoryPressureState.color)
+                        Text("MEMORY")
+                            .font(.system(size: 7.5, weight: .bold))
+                            .foregroundColor(.white.opacity(0.5))
+                    }
+                    
+                    Divider().frame(height: 22).background(Color.white.opacity(0.15))
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(String(format: "%.1f", Double(sysMonitor.ramUsedBytes) / 1_073_741_824.0)) GB used")
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .foregroundColor(.white)
+                        Text("Total \(sysMonitor.totalRAMFormatted) • \(sysMonitor.memoryPressureState.rawValue)")
+                            .font(.system(size: 8))
+                            .foregroundColor(.white.opacity(0.55))
+                    }
+                    Spacer()
+                }
+                
+            case "storage":
+                HStack(spacing: 10) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.blue.opacity(0.18))
+                            .frame(width: 32, height: 32)
+                        Image(systemName: "internaldrive.fill")
+                            .font(.system(size: 14))
+                            .foregroundColor(.blue)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(String(format: "%.1f", Double(sysMonitor.ssdFreeBytes) / 1_073_741_824.0)) GB Free")
+                            .font(.system(size: 13.5, weight: .bold))
+                            .foregroundColor(.white)
+                        Text("Macintosh HD • \(sysMonitor.totalSSDFormatted) Total")
+                            .font(.system(size: 8.5))
+                            .foregroundColor(.white.opacity(0.6))
+                    }
+                    Spacer()
+                }
+                
+            default:
+                EmptyView()
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(Color.white.opacity(0.06))
+        .cornerRadius(9)
+    }
+    
+    private func dynamicCurrencyCalcView(_ comp: WidgetComponent) -> some View {
+        let from = comp.currencyFrom ?? "USD"
+        let to = comp.currencyTo ?? "INR"
+        let rate = comp.currencyRate ?? 84.15
+        let amount = Double(state.dynamicCurrencyInput) ?? 100
+        let converted = amount * rate
+        
+        return VStack(spacing: 6) {
+            HStack(spacing: 8) {
+                HStack(spacing: 4) {
+                    Text(from)
+                        .font(.system(size: 9.5, weight: .bold))
+                        .foregroundColor(.white.opacity(0.6))
+                    TextField("100", text: $state.dynamicCurrencyInput)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+                        .frame(width: 55)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(Color.white.opacity(0.08))
+                .cornerRadius(6)
+                
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 9.5, weight: .bold))
+                    .foregroundColor(accentColor)
+                
+                HStack(spacing: 4) {
+                    Text(to)
+                        .font(.system(size: 9.5, weight: .bold))
+                        .foregroundColor(.white.opacity(0.6))
+                    Text(String(format: "%.2f", converted))
+                        .font(.system(size: 13.5, weight: .heavy, design: .rounded))
+                        .foregroundColor(accentColor)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(Color.white.opacity(0.08))
+                .cornerRadius(6)
+                
+                Spacer()
+            }
+        }
+    }
+    
+    private func dynamicWorldClocksView(_ comp: WidgetComponent) -> some View {
+        let cities = comp.clockCities ?? ["Cupertino", "London", "Tokyo", "New Delhi"]
+        
+        return HStack(spacing: 6) {
+            ForEach(cities, id: \.self) { city in
+                let info = timeForCity(city)
+                VStack(spacing: 2) {
+                    Text(city)
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundColor(.white.opacity(0.6))
+                        .lineLimit(1)
+                    Text(info.time)
+                        .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                    Text(info.offset)
+                        .font(.system(size: 7))
+                        .foregroundColor(accentColor)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+                .padding(.horizontal, 4)
+                .background(Color.white.opacity(0.06))
+                .cornerRadius(8)
+            }
+        }
+    }
+    
+    private func dynamicQuickAppsView(_ comp: WidgetComponent) -> some View {
+        let apps = comp.appNames ?? ["Safari", "Terminal", "Notes", "Code"]
+        
+        return HStack(spacing: 6) {
+            ForEach(apps, id: \.self) { app in
+                Button(action: {
+                    launchApplication(name: app)
+                }) {
+                    VStack(spacing: 4) {
+                        Image(systemName: sfSymbolForApp(app))
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(accentColor)
+                        Text(app)
+                            .font(.system(size: 8, weight: .medium))
+                            .foregroundColor(.white.opacity(0.9))
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 7)
+                    .background(Color.white.opacity(0.08))
+                    .cornerRadius(8)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+    
+    private func dynamicTextNoteView(_ comp: WidgetComponent) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ZStack(alignment: .topTrailing) {
+                TextField("Jot quick note...", text: $state.dynamicNoteText, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 10.5))
+                    .foregroundColor(.white.opacity(0.9))
+                    .lineLimit(3...4)
+                    .padding(8)
+                    .background(Color.white.opacity(0.06))
+                    .cornerRadius(8)
+                
+                if state.copiedToast {
+                    HStack(spacing: 3) {
+                        Image(systemName: "checkmark")
+                        Text("Copied")
+                    }
+                    .font(.system(size: 7.5, weight: .bold))
+                    .foregroundColor(.green)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(Color.black.opacity(0.7)))
+                    .padding(4)
+                }
+            }
+        }
+    }
+    
+    private func dynamicToggleListView(_ comp: WidgetComponent) -> some View {
+        guard let toggles = comp.toggles, !toggles.isEmpty else { return AnyView(EmptyView()) }
+        
+        return AnyView(
+            VStack(spacing: 4) {
+                ForEach(toggles, id: \.id) { item in
+                    let isOn = state.dynamicToggles[item.id] ?? item.isOn
+                    Button(action: {
+                        state.dynamicToggles[item.id] = !isOn
+                    }) {
+                        HStack {
+                            if let icon = item.icon {
+                                Image(systemName: icon)
+                                    .font(.system(size: 9.5))
+                                    .foregroundColor(isOn ? accentColor : .white.opacity(0.5))
+                            }
+                            Text(item.label)
+                                .font(.system(size: 9.5, weight: .medium))
+                                .foregroundColor(.white.opacity(0.9))
+                            Spacer()
+                            Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 11))
+                                .foregroundColor(isOn ? accentColor : .white.opacity(0.3))
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.white.opacity(0.04))
+                        .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        )
+    }
+    
+    private func dynamicQuoteView(_ comp: WidgetComponent) -> some View {
+        VStack(spacing: 4) {
+            Text("\"\(comp.title ?? "Simplicity is the ultimate sophistication.")\"")
+                .font(.system(size: 10.5, weight: .medium, design: .serif))
+                .italic()
+                .foregroundColor(.white.opacity(0.9))
+                .multilineTextAlignment(.center)
+                .lineLimit(3)
+            
+            if let author = comp.subtitle {
+                Text("— \(author)")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundColor(accentColor)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(6)
+    }
+    
+    // MARK: - Action Handlers & Native macOS Integrations
+    
+    private func handleActionButton(btn: WidgetActionButton) {
+        switch btn.actionType {
+        case "increment":
+            let delta = Double(btn.payload ?? "250") ?? 250
+            state.dynamicProgress += delta
+        case "decrement":
+            let delta = Double(btn.payload ?? "250") ?? 250
+            state.dynamicProgress = max(0, state.dynamicProgress - delta)
+        case "reset":
+            state.dynamicProgress = 0
+        case "launchApp":
+            let app = btn.payload ?? btn.label
+            launchApplication(name: app)
+        case "togglePlay", "nextTrack", "prevTrack":
+            executeMusicCommand(btn.actionType)
+        case "emptyTrash":
+            emptyTrash()
+        case "lowPowerToggle":
+            if let prefURL = URL(string: "x-apple.systempreferences:com.apple.preference.battery") {
+                NSWorkspace.shared.open(prefURL)
+            }
+        case "openSettings":
+            if let payload = btn.payload, let url = URL(string: payload) {
+                NSWorkspace.shared.open(url)
+            }
+        case "copyNote":
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(state.dynamicNoteText, forType: .string)
+            state.copiedToast = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                state.copiedToast = false
+            }
+        case "clearNote":
+            state.dynamicNoteText = ""
+        case "openStudio":
+            WidgetStudioService.shared.openStudio()
+        case "refresh":
+            SystemMonitorService.shared.sampleMetrics()
+        default:
+            if let payload = btn.payload, let url = URL(string: payload) {
+                NSWorkspace.shared.open(url)
+            }
+        }
+    }
+    
+    private func launchApplication(name: String) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        process.arguments = ["-a", name]
+        try? process.run()
+    }
+    
+    private func executeMusicCommand(_ cmd: String) {
+        let script: String
+        switch cmd {
+        case "nextTrack":
+            script = "tell application \"Music\" to next track"
+        case "prevTrack":
+            script = "tell application \"Music\" to previous track"
+        default:
+            script = "tell application \"Music\" to playpause"
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            var error: NSDictionary?
+            NSAppleScript(source: script)?.executeAndReturnError(&error)
+        }
+    }
+    
+    private func emptyTrash() {
+        DispatchQueue.global(qos: .userInitiated).async {
+            var error: NSDictionary?
+            NSAppleScript(source: "tell application \"Finder\" to empty trash")?.executeAndReturnError(&error)
+        }
+    }
+    
+    private func timeForCity(_ city: String) -> (time: String, offset: String) {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h:mm a"
+        
+        let tz: TimeZone?
+        let lower = city.lowercased()
+        if lower.contains("cupertino") || lower.contains("san francisco") || lower.contains("la") || lower.contains("pacific") {
+            tz = TimeZone(identifier: "America/Los_Angeles")
+        } else if lower.contains("new york") || lower.contains("eastern") {
+            tz = TimeZone(identifier: "America/New_York")
+        } else if lower.contains("london") {
+            tz = TimeZone(identifier: "Europe/London")
+        } else if lower.contains("tokyo") {
+            tz = TimeZone(identifier: "Asia/Tokyo")
+        } else if lower.contains("delhi") || lower.contains("mumbai") || lower.contains("india") {
+            tz = TimeZone(identifier: "Asia/Kolkata")
+        } else if lower.contains("paris") || lower.contains("berlin") {
+            tz = TimeZone(identifier: "Europe/Paris")
+        } else if lower.contains("sydney") {
+            tz = TimeZone(identifier: "Australia/Sydney")
+        } else if lower.contains("dubai") {
+            tz = TimeZone(identifier: "Asia/Dubai")
+        } else if lower.contains("singapore") {
+            tz = TimeZone(identifier: "Asia/Singapore")
+        } else {
+            tz = TimeZone.current
+        }
+        
+        formatter.timeZone = tz ?? TimeZone.current
+        let timeStr = formatter.string(from: state.currentTime)
+        
+        let localSeconds = TimeZone.current.secondsFromGMT(for: state.currentTime)
+        let targetSeconds = (tz ?? TimeZone.current).secondsFromGMT(for: state.currentTime)
+        let diffHours = Double(targetSeconds - localSeconds) / 3600.0
+        let diffStr: String
+        if abs(diffHours) < 0.1 {
+            diffStr = "Local"
+        } else if diffHours > 0 {
+            diffStr = String(format: "+%.1f hrs", diffHours).replacingOccurrences(of: ".0", with: "")
+        } else {
+            diffStr = String(format: "%.1f hrs", diffHours).replacingOccurrences(of: ".0", with: "")
+        }
+        
+        return (timeStr, diffStr)
+    }
+    
+    private func sfSymbolForApp(_ name: String) -> String {
+        let n = name.lowercased()
+        if n.contains("safari") || n.contains("browser") { return "safari" }
+        if n.contains("term") || n.contains("iterm") { return "terminal" }
+        if n.contains("note") { return "note.text" }
+        if n.contains("code") || n.contains("studio") { return "chevron.left.forwardslash.chevron.right" }
+        if n.contains("music") || n.contains("spotify") { return "music.note" }
+        if n.contains("mail") { return "envelope" }
+        if n.contains("calc") { return "plus.slash.minus" }
+        if n.contains("cal") { return "calendar" }
+        if n.contains("msg") || n.contains("message") { return "message" }
+        if n.contains("slack") { return "bubble.left.and.bubble.right" }
+        return "app.badge"
+    }
+    
+    private func colorFromHex(_ hex: String?) -> Color? {
+        guard let hex = hex?.trimmingCharacters(in: CharacterSet.alphanumerics.inverted), hex.count == 6 else { return nil }
+        var int: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&int)
+        let r = Double((int >> 16) & 0xFF) / 255.0
+        let g = Double((int >> 8) & 0xFF) / 255.0
+        let b = Double(int & 0xFF) / 255.0
+        return Color(red: r, green: g, blue: b)
+    }
+    
+    // MARK: - Fallback Custom Content
     
     private var customContent: some View {
         VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "sparkles")
+                    .foregroundColor(accentColor)
+                Text(widget.name)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(.white)
+            }
             Text(widget.prompt)
                 .font(.system(size: 11))
                 .foregroundColor(.white.opacity(0.75))
                 .lineLimit(2)
-            
-            HStack(spacing: 8) {
-                VStack(spacing: 2) {
-                    Text("Active")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(accentColor)
-                    Text("STATUS")
-                        .font(.system(size: 8.5, weight: .bold))
-                        .foregroundColor(.gray)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(8)
-                .background(Color.white.opacity(0.06))
-                .cornerRadius(8)
-                
-                VStack(spacing: 2) {
-                    Text("100%")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(.white)
-                    Text("READY")
-                        .font(.system(size: 8.5, weight: .bold))
-                        .foregroundColor(.gray)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(8)
-                .background(Color.white.opacity(0.06))
-                .cornerRadius(8)
-            }
         }
         .frame(maxHeight: .infinity)
     }

@@ -64,7 +64,8 @@ public final class WidgetStudioService: ObservableObject, @unchecked Sendable {
             yPosition: initialY,
             isPinnedToDesktop: false,
             isVisible: true,
-            theme: theme
+            theme: theme,
+            components: gen.components
         )
         
         widgets.insert(widget, at: 0)
@@ -73,6 +74,27 @@ public final class WidgetStudioService: ObservableObject, @unchecked Sendable {
         spawnPanel(for: widget)
         updateActiveState()
         return widget
+    }
+    
+    public func createAndSpawnWidgetAsync(prompt: String, theme: String = "glass", apiKey: String? = nil) async -> CustomWidget {
+        if let key = apiKey?.trimmingCharacters(in: .whitespacesAndNewlines), !key.isEmpty {
+            do {
+                let widget = try await WidgetGenerator.shared.generateWithGemini(prompt: prompt, theme: theme, apiKey: key)
+                await MainActor.run {
+                    self.widgets.insert(widget, at: 0)
+                    self.saveWidgets()
+                    self.spawnPanel(for: widget)
+                    self.updateActiveState()
+                }
+                return widget
+            } catch {
+                print("Gemini API generation failed, falling back to on-device engine: \(error)")
+            }
+        }
+        
+        return await MainActor.run {
+            self.createAndSpawnWidget(prompt: prompt, theme: theme)
+        }
     }
     
     private func spawnPanel(for widget: CustomWidget) {

@@ -7,6 +7,12 @@ public final class WidgetStudioViewState: ObservableObject {
     @Published public var isGenerating: Bool = false
     @Published public var previewWidget: CustomWidget?
     @Published public var successToast: String?
+    @Published public var geminiApiKey: String = UserDefaults.standard.string(forKey: "switch.geminiApiKey") ?? "" {
+        didSet {
+            UserDefaults.standard.set(geminiApiKey, forKey: "switch.geminiApiKey")
+        }
+    }
+    @Published public var showApiConfig: Bool = false
     
     public init() {}
 }
@@ -16,16 +22,18 @@ public struct WidgetStudioView: View {
     @StateObject private var state = WidgetStudioViewState()
     
     private let promptSuggestions: [(label: String, prompt: String)] = [
-        ("⏰ Live Clock", "Frosted glass live analog and digital clock with greeting and date"),
-        ("📈 Crypto Ticker", "Crypto market ticker showing Bitcoin, Ethereum, and Solana with live price updates"),
-        ("⏳ Pomodoro", "Pomodoro focus timer with session countdown, break switch, and start/pause"),
-        ("⚡ System Gauges", "Futuristic circular radial gauges monitoring CPU, RAM, and Battery"),
-        ("✅ Quick Tasks", "Clean todo checklist where I can type new tasks and check them off"),
-        ("🌤 Weather Card", "Atmosphere weather card with current temperature, condition icon, and humidity"),
-        ("🎯 Habit Streak", "Daily habit tracker with weekly progress circles and streak counter"),
-        ("🧮 Calculator", "Sleek glassmorphic calculator with responsive keypad"),
-        ("🚀 Countdown", "Event milestone countdown with days, hours, and minutes remaining"),
-        ("💡 Daily Quote", "Inspirational quote of the day with elegant serif typography")
+        ("🔋 Battery Health", "Live Apple Silicon battery health monitor with cycle count, health percentage, temperature and low power mode toggle"),
+        ("💱 Currency Converter", "Live currency converter calculating USD to INR exchange rates with instant calculator input"),
+        ("💧 Water Tracker", "Daily hydration tracker with 2000ml goal progress bar, remaining glasses, and +250ml log buttons"),
+        ("⚡ Hardware Pulse", "MacBook real-time hardware telemetry monitoring live CPU load, fan status, and RAM memory pressure"),
+        ("💾 Disk & Storage", "Mac storage cleaner widget showing free SSD space in GB with quick Empty Trash action"),
+        ("🚀 App Launcher", "Speed launcher widget with quick buttons to open Safari, Terminal, Notes, and Visual Studio Code"),
+        ("🎵 Media Controls", "Compact desktop music controller with track name, play/pause and skip buttons"),
+        ("🌍 World Clocks", "Global time tracker showing current time in Cupertino, London, Tokyo, and New Delhi"),
+        ("📝 Scratchpad", "Quick desktop memo notepad to jot down urgent thoughts with one-click copy button"),
+        ("⏳ Pomodoro Focus", "25-minute Pomodoro focus timer with session countdown, break switch, and start/pause"),
+        ("📈 Crypto Markets", "Crypto market ticker showing Bitcoin, Ethereum, and Solana live prices and 24h delta"),
+        ("✅ Quick Tasks", "Clean interactive todo checklist where I can type new tasks and check them off")
     ]
     
     public init() {}
@@ -126,8 +134,28 @@ public struct WidgetStudioView: View {
                                         }
                                         .pickerStyle(.menu)
                                         .labelsHidden()
-                                        .frame(width: 135)
+                                        .frame(width: 130)
                                     }
+                                    
+                                    // Cloud AI Key Button
+                                    Button(action: {
+                                        withAnimation(.easeInOut(duration: 0.2)) {
+                                            state.showApiConfig.toggle()
+                                        }
+                                    }) {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: state.geminiApiKey.isEmpty ? "sparkle" : "sparkles")
+                                                .foregroundColor(state.geminiApiKey.isEmpty ? .gray : Color(red: 0.28, green: 0.76, blue: 0.52))
+                                            Text(state.geminiApiKey.isEmpty ? "Cloud AI (Optional)" : "Gemini API Active")
+                                                .font(.system(size: 10.5, weight: .medium))
+                                                .foregroundColor(state.geminiApiKey.isEmpty ? .gray : .white)
+                                        }
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 5)
+                                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(0.06)))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("Optionally connect Google Gemini API for cloud LLM widget generation. On-device engine works without key.")
                                     
                                     Spacer()
                                     
@@ -160,6 +188,39 @@ public struct WidgetStudioView: View {
                                 }
                                 .padding(.horizontal, 12)
                                 .padding(.bottom, 10)
+                                
+                                if state.showApiConfig {
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        HStack {
+                                            Image(systemName: "key.fill")
+                                                .font(.system(size: 10))
+                                                .foregroundColor(Color(red: 0.28, green: 0.76, blue: 0.52))
+                                            Text("Google Gemini API Key (Optional — On-Device Semantic Synthesis runs instantly without key)")
+                                                .font(.system(size: 10, weight: .semibold))
+                                                .foregroundColor(.white.opacity(0.85))
+                                            Spacer()
+                                        }
+                                        
+                                        HStack(spacing: 8) {
+                                            SecureField("Paste AIzaSy... (Saved locally)", text: $state.geminiApiKey)
+                                                .textFieldStyle(.plain)
+                                                .font(.system(size: 11, design: .monospaced))
+                                                .foregroundColor(.white)
+                                                .padding(6)
+                                                .background(RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(0.08)))
+                                            
+                                            if !state.geminiApiKey.isEmpty {
+                                                Button("Clear") {
+                                                    state.geminiApiKey = ""
+                                                }
+                                                .font(.system(size: 10))
+                                                .foregroundColor(.gray)
+                                            }
+                                        }
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .padding(.bottom, 10)
+                                }
                             }
                         }
                         
@@ -336,16 +397,24 @@ public struct WidgetStudioView: View {
         guard !text.isEmpty else { return }
         
         state.isGenerating = true
+        let apiKey = state.geminiApiKey.trimmingCharacters(in: .whitespaces)
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            let created = studio.createAndSpawnWidget(prompt: text, theme: state.selectedTheme)
-            state.isGenerating = false
-            state.promptText = ""
-            state.successToast = "Spawned '\(created.name)' on your desktop! You can drag it anywhere."
+        Task {
+            let created = await studio.createAndSpawnWidgetAsync(
+                prompt: text,
+                theme: state.selectedTheme,
+                apiKey: apiKey.isEmpty ? nil : apiKey
+            )
             
-            DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
-                withAnimation {
-                    state.successToast = nil
+            await MainActor.run {
+                state.isGenerating = false
+                state.promptText = ""
+                state.successToast = "✨ Generated & Placed '\(created.name)' on your desktop! You can drag it anywhere."
+                
+                DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
+                    withAnimation {
+                        state.successToast = nil
+                    }
                 }
             }
         }
