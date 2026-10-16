@@ -116,8 +116,12 @@ public final class ClipboardService: ObservableObject, @unchecked Sendable {
     @Published public private(set) var items: [ClipboardItem] = []
     @Published public private(set) var isWindowVisible: Bool = false
     
-    // In-memory thumbnail cache
-    private var thumbnailCache: [UUID: NSImage] = [:]
+    // In-memory auto-purging thumbnail cache (saves RAM under system memory pressure)
+    private let thumbnailCache: NSCache<NSUUID, NSImage> = {
+        let cache = NSCache<NSUUID, NSImage>()
+        cache.countLimit = 30
+        return cache
+    }()
     
     // Polling & Key/Mouse monitoring
     private var pollTimer: Timer?
@@ -245,8 +249,8 @@ public final class ClipboardService: ObservableObject, @unchecked Sendable {
         // Initial change count
         lastChangeCount = NSPasteboard.general.changeCount
         
-        // Poll every 0.35s in .common mode so polling runs continuously even when menus or drags are active
-        let timer = Timer(timeInterval: 0.35, repeats: true) { [weak self] _ in
+        // Poll every 0.75s in .common mode: responsive yet ultra-power-efficient (cuts timer wakeups by >50%)
+        let timer = Timer(timeInterval: 0.75, repeats: true) { [weak self] _ in
             self?.checkPasteboard()
         }
         RunLoop.main.add(timer, forMode: .common)
@@ -717,7 +721,7 @@ public final class ClipboardService: ObservableObject, @unchecked Sendable {
                     createdAt: Date()
                 )
                 
-                thumbnailCache[id] = generateThumbnail(from: image)
+                thumbnailCache.setObject(generateThumbnail(from: image), forKey: id as NSUUID)
                 addItem(newItem)
             } catch {
                 print("Failed to save clipboard image: \(error)")
@@ -773,7 +777,7 @@ public final class ClipboardService: ObservableObject, @unchecked Sendable {
             if let fileName = removed.imageFileName {
                 deleteImageFile(fileName)
             }
-            thumbnailCache.removeValue(forKey: removed.id)
+            thumbnailCache.removeObject(forKey: removed.id as NSUUID)
         }
         
         saveHistoryToDisk()
@@ -786,7 +790,7 @@ public final class ClipboardService: ObservableObject, @unchecked Sendable {
             if let fileName = removed.imageFileName {
                 deleteImageFile(fileName)
             }
-            thumbnailCache.removeValue(forKey: id)
+            thumbnailCache.removeObject(forKey: id as NSUUID)
             saveHistoryToDisk()
             NotificationCenter.default.post(name: .clipboardItemsDidChange, object: nil)
         }
@@ -799,7 +803,7 @@ public final class ClipboardService: ObservableObject, @unchecked Sendable {
             }
         }
         items.removeAll()
-        thumbnailCache.removeAll()
+        thumbnailCache.removeAllObjects()
         saveHistoryToDisk()
         NotificationCenter.default.post(name: .clipboardItemsDidChange, object: nil)
     }
@@ -870,12 +874,12 @@ public final class ClipboardService: ObservableObject, @unchecked Sendable {
     // MARK: - Image Helpers & Cache
     
     public func thumbnail(for item: ClipboardItem) -> NSImage? {
-        if let cached = thumbnailCache[item.id] {
+        if let cached = thumbnailCache.object(forKey: item.id as NSUUID) {
             return cached
         }
         if let full = loadImage(for: item) {
             let thumb = generateThumbnail(from: full)
-            thumbnailCache[item.id] = thumb
+            thumbnailCache.setObject(thumb, forKey: item.id as NSUUID)
             return thumb
         }
         return nil

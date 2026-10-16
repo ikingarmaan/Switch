@@ -65,6 +65,7 @@ public final class SwitchListViewModel: ObservableObject {
         case .mouseBoostPro: return ["mouse acceleration", "gaming", "smooth cursor", "dpi", "speed"]
         case .ultraPowerSave: return ["battery saver", "eco", "low power", "throttle", "save battery"]
         case .textGrabber: return ["ocr", "copy text", "extract text", "image text", "video text"]
+        case .customWidgets: return ["widget", "desktop", "clock", "crypto", "pomodoro", "notes", "todo", "weather", "ai", "prompt", "studio"]
         default: return []
         }
     }
@@ -651,6 +652,19 @@ public final class SwitchListViewModel: ObservableObject {
             }
             .store(in: &cancellables)
             
+        NotificationCenter.default.publisher(for: .widgetStudioStateDidChange)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self = self,
+                      let index = self.switches.firstIndex(where: { $0.type == .customWidgets })
+                else { return }
+                let ws = WidgetStudioService.shared
+                self.switches[index].isOn = ws.isAnyWidgetActive
+                self.switches[index].isLoading = false
+                self.switches[index].subtitle = ws.statusSubtitle
+            }
+            .store(in: &cancellables)
+            
         // Lifecycle optimizations: only run periodic refresh when Switch UI is visible
         NotificationCenter.default.publisher(for: .switchPopoverDidOpen)
             .receive(on: RunLoop.main)
@@ -703,7 +717,8 @@ public final class SwitchListViewModel: ObservableObject {
             .dockDoor,
             .mouseBoostPro,
             .ultraPowerSave,
-            .textGrabber
+            .textGrabber,
+            .customWidgets
         ]
         
         self.switches = initialTypes.map { type in

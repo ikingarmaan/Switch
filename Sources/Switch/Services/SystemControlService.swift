@@ -39,6 +39,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
     case mouseBoostPro = "mouseBoostPro"
     case ultraPowerSave = "ultraPowerSave"
     case textGrabber = "textGrabber"
+    case customWidgets = "customWidgets"
     
     public var id: String { rawValue }
     
@@ -79,6 +80,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .mouseBoostPro: return "MouseBoost Pro (Steroids)"
         case .ultraPowerSave: return "Ultra Power Saver"
         case .textGrabber: return "Live Text (Copy Anywhere)"
+        case .customWidgets: return "AI Desktop Widgets"
         }
     }
     
@@ -119,6 +121,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .mouseBoostPro: return "cursorarrow.rays"
         case .ultraPowerSave: return "bolt.batteryblock.fill"
         case .textGrabber: return "text.viewfinder"
+        case .customWidgets: return "sparkles.rectangle.stack"
         }
     }
     
@@ -382,6 +385,10 @@ public final class SystemControlService: @unchecked Sendable {
         case .textGrabber:
             let tg = TextGrabberService.shared
             return (tg.isEnabled, tg.statusSubtitle)
+            
+        case .customWidgets:
+            let ws = WidgetStudioService.shared
+            return (ws.isAnyWidgetActive, ws.statusSubtitle)
         }
     }
     
@@ -584,6 +591,11 @@ public final class SystemControlService: @unchecked Sendable {
         case .textGrabber:
             DispatchQueue.main.async {
                 TextGrabberService.shared.setEnabled(isOn)
+            }
+            
+        case .customWidgets:
+            DispatchQueue.main.async {
+                WidgetStudioService.shared.toggleAllWidgets(isOn)
             }
         }
     }

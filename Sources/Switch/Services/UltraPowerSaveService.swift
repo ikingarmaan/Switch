@@ -106,7 +106,7 @@ public final class UltraPowerSaveService: NSObject, ObservableObject, @unchecked
     
     private func startBatteryMonitoring() {
         batteryTimer?.invalidate()
-        batteryTimer = Timer.scheduledTimer(withTimeInterval: 6.0, repeats: true) { [weak self] _ in
+        batteryTimer = Timer.scheduledTimer(withTimeInterval: 20.0, repeats: true) { [weak self] _ in
             self?.updateBatteryInfo()
         }
     }

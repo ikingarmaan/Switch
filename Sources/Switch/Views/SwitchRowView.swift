@@ -2819,6 +2819,23 @@ public struct SwitchRowView: View {
                             }
                         }
                     }
+                } else if item.type == .customWidgets {
+                    Button(action: {
+                        WidgetStudioService.shared.openStudio()
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 10, weight: .semibold))
+                            Text(item.subtitle ?? "Studio")
+                                .font(.system(size: 11.5, weight: item.isOn ? .bold : .medium, design: .rounded))
+                        }
+                        .foregroundColor(item.isOn ? Color(red: 0.28, green: 0.76, blue: 0.52) : Color.gray.opacity(0.85))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(RoundedRectangle(cornerRadius: 5).fill(Color.white.opacity(0.06)))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Open AI Widget Studio")
                 } else if let subtitle = item.subtitle, !subtitle.isEmpty {
                     Text(subtitle)
                         .font(.system(size: 12, weight: .regular))

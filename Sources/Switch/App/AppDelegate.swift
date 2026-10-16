@@ -58,6 +58,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
         _ = MouseBoostProService.shared
         _ = UltraPowerSaveService.shared
         _ = TextGrabberService.shared
+        _ = WidgetStudioService.shared
         _ = GlobalHotkeyService.shared
         GlobalHotkeyService.shared.registerGlobalHotkey()
         
@@ -236,8 +237,10 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            guard let self = self, let button = self.statusItem?.button else { return }
-            self.showPopover(button)
+            MainActor.assumeIsolated {
+                guard let self = self, let button = self.statusItem?.button else { return }
+                self.showPopover(button)
+            }
         }
         
         // Native AppleEvent URL scheme registration

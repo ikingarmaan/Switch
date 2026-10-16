@@ -176,6 +176,7 @@ public final class DockDoorService: NSObject, ObservableObject, @unchecked Senda
     private var lastHoveredDockRect: CGRect = .zero
     private var isMouseInsidePreview: Bool = false
     private var activeModifierForSwitcher: NSEvent.ModifierFlags?
+    private var lastMouseMoveTime: TimeInterval = 0
     
     public var statusSubtitle: String? {
         if isEnabled {
@@ -323,6 +324,14 @@ public final class DockDoorService: NSObject, ObservableObject, @unchecked Senda
     
     public func handleGlobalMouseMove() {
         guard isEnabled, !isSwitcherActive else { return }
+        
+        // Performance throttle: max 20 evaluations per second (every 50ms)
+        let now = ProcessInfo.processInfo.systemUptime
+        if now - lastMouseMoveTime < 0.05 {
+            return
+        }
+        lastMouseMoveTime = now
+        
         let mouseLocation = NSEvent.mouseLocation
         
         // 1. If mouse is hovering over the currently visible preview window, keep it open!
@@ -337,6 +346,15 @@ public final class DockDoorService: NSObject, ObservableObject, @unchecked Senda
             }
         }
         isMouseInsidePreview = false
+        
+        // Fast pre-check: If cursor is not near any screen boundary, it CANNOT be over the Dock.
+        // This avoids calling expensive AXUIElementCopyElementAtPosition across the entire system.
+        guard isNearDockEdge(at: mouseLocation) else {
+            if previewPanel?.isVisible == true {
+                scheduleHidePreview()
+            }
+            return
+        }
         
         // 2. Detect if mouse is in the Dock region of any screen
         guard let dockInfo = findHoveredDockItem(at: mouseLocation) else {
@@ -359,6 +377,22 @@ public final class DockDoorService: NSObject, ObservableObject, @unchecked Senda
         hoverTimer = Timer.scheduledTimer(withTimeInterval: hoverDelay.rawValue, repeats: false) { [weak self] _ in
             self?.showPreviewForApp(dockInfo: dockInfo)
         }
+    }
+    
+    private func isNearDockEdge(at point: NSPoint) -> Bool {
+        for screen in NSScreen.screens {
+            let frame = screen.frame
+            if frame.contains(point) {
+                // Dock is typically at bottom (height <= 85), left (x <= 85), or right (x >= width - 85)
+                let isBottom = point.y <= frame.minY + 85
+                let isLeft = point.x <= frame.minX + 85
+                let isRight = point.x >= frame.maxX - 85
+                if isBottom || isLeft || isRight {
+                    return true
+                }
+            }
+        }
+        return false
     }
     
     struct DockItemInfo {

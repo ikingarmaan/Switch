@@ -402,7 +402,8 @@ public final class SystemMonitorService: ObservableObject, @unchecked Sendable {
         isSampling = true
         
         let previousLoad = self.prevCpuLoad
-        let needDetailedProcesses = popover.isShown
+        let isPopoverShown = popover.isShown
+        let needDetailedProcesses = isPopoverShown || displayMode == .compactWithApp || displayMode == .stacked
         let lastNetIn = self.prevNetInBytes
         let lastNetOut = self.prevNetOutBytes
         let lastNetTime = self.prevNetTimestamp
@@ -537,8 +538,10 @@ public final class SystemMonitorService: ObservableObject, @unchecked Sendable {
                 ssdP = totalSSD > 0 ? (Double(usedSSD) / Double(totalSSD)) * 100.0 : 0.0
             }
             
-            // 8. Top Processes via ps
-            let topLists = Self.fetchTopProcesses(limit: needDetailedProcesses ? 5 : 2, totalRAM: totalRAM)
+            // 8. Top Processes via ps (ONLY if popover is open or display mode requires it)
+            let topLists = needDetailedProcesses
+                ? Self.fetchTopProcesses(limit: isPopoverShown ? 5 : 2, totalRAM: totalRAM)
+                : (cpuList: [MonitoredProcess](), ramList: [MonitoredProcess]())
             
             // 9. Battery Details via IOKit
             let batData = Self.fetchBatteryDetails()

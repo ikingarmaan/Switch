@@ -174,6 +174,23 @@ public struct SwitchListView: View {
                 }
                 .buttonStyle(.plain)
                 
+                // AI Widgets Button
+                Button(action: {
+                    WidgetStudioService.shared.openStudio()
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "sparkles")
+                        Text("Widgets")
+                    }
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundColor(Color(red: 0.28, green: 0.76, blue: 0.52))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(RoundedRectangle(cornerRadius: 5).fill(Color(red: 0.28, green: 0.76, blue: 0.52).opacity(0.12)))
+                }
+                .buttonStyle(.plain)
+                .help("AI Desktop Widget Studio - Prompt to Mac Widgets")
+                
                 Spacer()
                 
                 // Settings Button
