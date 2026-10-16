@@ -71,6 +71,8 @@ public final class AmphetamineService: NSObject, ObservableObject, @unchecked Se
             self.selectedDuration = saved
             self.remainingSeconds = saved
         }
+        // Safety: Ensure any stale system sleep override from previous crash/abrupt exit is reverted
+        revertDisableSleep()
     }
     
     public func setDuration(_ seconds: Int) {
