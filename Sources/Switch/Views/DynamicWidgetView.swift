@@ -1,4 +1,29 @@
 import SwiftUI
+import AppKit
+
+// MARK: - Native Widget Drag Area
+public struct WidgetDragAreaView: NSViewRepresentable {
+    public init() {}
+    
+    public func makeNSView(context: Context) -> WidgetDragNSView {
+        WidgetDragNSView()
+    }
+    
+    public func updateNSView(_ nsView: WidgetDragNSView, context: Context) {}
+    
+    public final class WidgetDragNSView: NSView {
+        public override var mouseDownCanMoveWindow: Bool { true }
+        
+        public override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+            return true
+        }
+        
+        public override func mouseDown(with event: NSEvent) {
+            guard let window = self.window else { return }
+            window.performDrag(with: event)
+        }
+    }
+}
 
 // MARK: - Todo Item Model
 public struct WidgetTodoItem: Identifiable {
@@ -59,45 +84,60 @@ public struct DynamicWidgetView: View {
     
     public var body: some View {
         VStack(spacing: 0) {
-            // Header Bar (Window controls)
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(accentColor)
-                    .frame(width: 7, height: 7)
-                    .shadow(color: accentColor.opacity(0.8), radius: 3)
+            // Header Bar (Window controls + Native Drag Area)
+            ZStack {
+                // Background native drag area spanning the header
+                WidgetDragAreaView()
                 
-                Text(widget.name.uppercased())
-                    .font(.system(size: 10.5, weight: .bold))
-                    .foregroundColor(.white.opacity(0.8))
-                    .tracking(0.6)
-                    .lineLimit(1)
-                
-                Spacer()
-                
-                // Pin button
-                Button(action: onTogglePin) {
-                    Image(systemName: widget.isPinnedToDesktop ? "pin.fill" : "pin.slash")
-                        .font(.system(size: 10))
-                        .foregroundColor(widget.isPinnedToDesktop ? accentColor : .white.opacity(0.6))
-                        .padding(4)
-                        .background(RoundedRectangle(cornerRadius: 4).fill(Color.white.opacity(0.08)))
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(accentColor)
+                        .frame(width: 7, height: 7)
+                        .shadow(color: accentColor.opacity(0.8), radius: 3)
+                        .allowsHitTesting(false)
+                    
+                    Text(widget.name.uppercased())
+                        .font(.system(size: 10.5, weight: .bold))
+                        .foregroundColor(.white.opacity(0.8))
+                        .tracking(0.6)
+                        .lineLimit(1)
+                        .allowsHitTesting(false)
+                    
+                    // Subtle drag handle grip
+                    Image(systemName: "line.3.horizontal")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundColor(.white.opacity(0.35))
+                        .allowsHitTesting(false)
+                    
+                    Spacer()
+                        .allowsHitTesting(false)
+                    
+                    // Pin button
+                    Button(action: onTogglePin) {
+                        Image(systemName: widget.isPinnedToDesktop ? "pin.fill" : "pin.slash")
+                            .font(.system(size: 10))
+                            .foregroundColor(widget.isPinnedToDesktop ? accentColor : .white.opacity(0.6))
+                            .padding(4)
+                            .background(RoundedRectangle(cornerRadius: 4).fill(Color.white.opacity(0.08)))
+                    }
+                    .buttonStyle(.plain)
+                    .help(widget.isPinnedToDesktop ? "Pinned to Desktop (Click to float)" : "Floating Window (Click to pin)")
+                    
+                    // Close button
+                    Button(action: onClose) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(.white.opacity(0.7))
+                            .padding(4)
+                            .background(RoundedRectangle(cornerRadius: 4).fill(Color.white.opacity(0.08)))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Close Widget")
                 }
-                .buttonStyle(.plain)
-                .help(widget.isPinnedToDesktop ? "Pinned to Desktop" : "Floating Window")
-                
-                // Close button
-                Button(action: onClose) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundColor(.white.opacity(0.7))
-                        .padding(4)
-                        .background(RoundedRectangle(cornerRadius: 4).fill(Color.white.opacity(0.08)))
-                }
-                .buttonStyle(.plain)
-                .help("Close Widget")
             }
+            .frame(height: 26)
             .padding(.horizontal, 14)
-            .padding(.top, 10)
+            .padding(.top, 8)
             .padding(.bottom, 6)
             
             // Content Body
@@ -127,6 +167,7 @@ public struct DynamicWidgetView: View {
                     customContent
                 }
             }
+            .allowsHitTesting(isContentInteractive)
             .padding(.horizontal, 14)
             .padding(.bottom, 12)
         }
@@ -135,19 +176,47 @@ public struct DynamicWidgetView: View {
             ZStack {
                 VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
                 backgroundGradient
+                WidgetDragAreaView()
             }
         )
         .cornerRadius(18)
         .overlay(
             RoundedRectangle(cornerRadius: 18)
                 .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                .allowsHitTesting(false)
         )
         .shadow(color: Color.black.opacity(0.4), radius: 16, x: 0, y: 8)
+        .contextMenu {
+            Button(action: onTogglePin) {
+                Label(
+                    widget.isPinnedToDesktop ? "Float on Top" : "Pin to Desktop",
+                    systemImage: widget.isPinnedToDesktop ? "arrow.up.and.line.horizontal.and.arrow.down" : "pin.fill"
+                )
+            }
+            Button(action: {
+                WidgetStudioService.shared.openStudio()
+            }) {
+                Label("Open Widget Studio...", systemImage: "sparkles")
+            }
+            Divider()
+            Button(role: .destructive, action: onClose) {
+                Label("Close Widget", systemImage: "xmark")
+            }
+        }
         .onReceive(Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()) { now in
             self.state.currentTime = now
             if self.state.isPomoRunning && self.state.pomoSeconds > 0 {
                 self.state.pomoSeconds -= 1
             }
+        }
+    }
+    
+    private var isContentInteractive: Bool {
+        switch widget.category {
+        case "pomodoro", "todo", "habit", "calc", "quote":
+            return true
+        default:
+            return false
         }
     }
     

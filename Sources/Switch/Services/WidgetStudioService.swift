@@ -125,11 +125,19 @@ public final class WidgetStudioService: ObservableObject, @unchecked Sendable {
         saveWidgets()
     }
     
+    private var savePositionWorkItem: DispatchWorkItem?
+    
     public func updateWidgetPosition(id: UUID, x: CGFloat, y: CGFloat) {
         guard let index = widgets.firstIndex(where: { $0.id == id }) else { return }
         widgets[index].xPosition = x
         widgets[index].yPosition = y
-        saveWidgets()
+        
+        savePositionWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            self?.saveWidgets()
+        }
+        savePositionWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: item)
     }
     
     public func toggleAllWidgets(_ enable: Bool) {

@@ -5,6 +5,9 @@ public final class WidgetPanel: NSPanel {
     public let widgetId: UUID
     public var isPinnedToDesktop: Bool = false
     
+    public override var canBecomeKey: Bool { true }
+    public override var canBecomeMain: Bool { true }
+    
     public init(widget: CustomWidget) {
         self.widgetId = widget.id
         self.isPinnedToDesktop = widget.isPinnedToDesktop
@@ -23,7 +26,7 @@ public final class WidgetPanel: NSPanel {
         )
         
         self.isFloatingPanel = !isPinnedToDesktop
-        self.level = isPinnedToDesktop ? NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow))) : .floating
+        self.level = isPinnedToDesktop ? NSWindow.Level(rawValue: -1) : .floating
         self.backgroundColor = .clear
         self.isOpaque = false
         self.hasShadow = false
@@ -55,12 +58,8 @@ public final class WidgetPanel: NSPanel {
     public func updatePinState(_ pinned: Bool) {
         self.isPinnedToDesktop = pinned
         self.isFloatingPanel = !pinned
-        self.level = pinned ? NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow))) : .floating
-        if pinned {
-            self.orderBack(nil)
-        } else {
-            self.orderFront(nil)
-        }
+        self.level = pinned ? NSWindow.Level(rawValue: -1) : .floating
+        self.orderFront(nil)
     }
     
     @objc private func windowDidMoveNotification(_ notification: Notification) {
