@@ -40,6 +40,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
     case ultraPowerSave = "ultraPowerSave"
     case textGrabber = "textGrabber"
     case customWidgets = "customWidgets"
+    case mediaPlayer = "mediaPlayer"
     
     public var id: String { rawValue }
     
@@ -81,6 +82,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .ultraPowerSave: return "Ultra Power Saver"
         case .textGrabber: return "Live Text (Copy Anywhere)"
         case .customWidgets: return "AI Desktop Widgets"
+        case .mediaPlayer: return "Universal Media Player"
         }
     }
     
@@ -122,6 +124,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .ultraPowerSave: return "bolt.batteryblock.fill"
         case .textGrabber: return "text.viewfinder"
         case .customWidgets: return "sparkles.rectangle.stack"
+        case .mediaPlayer: return "play.tv.fill"
         }
     }
     
@@ -389,6 +392,10 @@ public final class SystemControlService: @unchecked Sendable {
         case .customWidgets:
             let ws = WidgetStudioService.shared
             return (ws.isAnyWidgetActive, ws.statusSubtitle)
+            
+        case .mediaPlayer:
+            let s = UniversalMediaPlayerService.shared
+            return (s.isWindowOpen, s.statusSubtitle)
         }
     }
     
@@ -596,6 +603,15 @@ public final class SystemControlService: @unchecked Sendable {
         case .customWidgets:
             DispatchQueue.main.async {
                 WidgetStudioService.shared.toggleAllWidgets(isOn)
+            }
+            
+        case .mediaPlayer:
+            DispatchQueue.main.async {
+                if isOn {
+                    MediaPlayerWindowManager.shared.showWindow()
+                } else {
+                    MediaPlayerWindowManager.shared.closeWindow()
+                }
             }
         }
     }

@@ -2872,6 +2872,64 @@ public struct SwitchRowView: View {
                             }
                         }
                     }
+                } else if item.type == .mediaPlayer {
+                    let s = UniversalMediaPlayerService.shared
+                    Menu {
+                        Button(action: {
+                            MediaPlayerWindowManager.shared.showWindow()
+                        }) {
+                            HStack {
+                                Text(s.isPlaying ? "Show Player Controls" : "Open Switch Player...")
+                                Image(systemName: "play.tv.fill")
+                            }
+                        }
+                        
+                        Divider()
+                        
+                        Button(action: {
+                            MediaPlayerWindowManager.shared.showWindow()
+                            MediaPlayerWindowManager.shared.promptOpenFile()
+                        }) {
+                            HStack {
+                                Text("Open Video File... (⌘O)")
+                                Image(systemName: "doc.badge.plus")
+                            }
+                        }
+                        
+                        if let last = s.recentFiles.first {
+                            Button(action: {
+                                s.openVideo(url: last)
+                            }) {
+                                HStack {
+                                    Text("Resume '\(last.deletingPathExtension().lastPathComponent)'")
+                                    Image(systemName: "arrow.clockwise")
+                                }
+                            }
+                        }
+                        
+                        Divider()
+                        
+                        Button(action: {
+                            s.setAsDefaultVideoPlayer()
+                        }) {
+                            HStack {
+                                Text("Set as Default Mac Video Player")
+                                Image(systemName: "checkmark.seal.fill")
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 3) {
+                            Text(item.subtitle ?? s.statusSubtitle)
+                                .font(.system(size: 12, weight: item.isOn ? .bold : .medium, design: .rounded))
+                                .foregroundColor(item.isOn ? Color(red: 0.28, green: 0.76, blue: 0.52) : Color.gray.opacity(0.85))
+                                .lineLimit(1)
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 8))
+                                .foregroundColor(Color.gray.opacity(0.6))
+                        }
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
                 } else if let subtitle = item.subtitle, !subtitle.isEmpty {
                     Text(subtitle)
                         .font(.system(size: 12, weight: .regular))

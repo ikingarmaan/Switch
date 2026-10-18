@@ -66,6 +66,7 @@ public final class SwitchListViewModel: ObservableObject {
         case .ultraPowerSave: return ["battery saver", "eco", "low power", "throttle", "save battery"]
         case .textGrabber: return ["ocr", "copy text", "extract text", "image text", "video text"]
         case .customWidgets: return ["widget", "desktop", "clock", "crypto", "pomodoro", "notes", "todo", "weather", "ai", "prompt", "studio"]
+        case .mediaPlayer: return ["vlc", "iina", "video", "media player", "movie", "play", "mkv", "mp4", "player", "subtitles", "stream"]
         default: return []
         }
     }
@@ -665,6 +666,20 @@ public final class SwitchListViewModel: ObservableObject {
             }
             .store(in: &cancellables)
             
+        NotificationCenter.default.publisher(for: .mediaPlayerDidChange)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self = self,
+                      let index = self.switches.firstIndex(where: { $0.type == .mediaPlayer })
+                else { return }
+                let s = UniversalMediaPlayerService.shared
+                let isVis = MediaPlayerWindowManager.shared.isWindowVisible
+                self.switches[index].isOn = isVis
+                self.switches[index].isLoading = false
+                self.switches[index].subtitle = s.statusSubtitle
+            }
+            .store(in: &cancellables)
+            
         // Lifecycle optimizations: only run periodic refresh when Switch UI is visible
         NotificationCenter.default.publisher(for: .switchPopoverDidOpen)
             .receive(on: RunLoop.main)
@@ -683,7 +698,7 @@ public final class SwitchListViewModel: ObservableObject {
     }
     
     private func setupSwitches() {
-        // Ordered as shown in user's image + lockKeyboard + cameraPreview + timer + amphetamine + mouseJiggler + autoScroll + googlyEyes + volumeBoost + systemMonitor + loomRecorder + forceQuitApps + autoVPN + tidyFolders + adblockDNS + knockScreenshot + clipboardManager + stickyNotes + locationServices + ramGpuReset + cleanMacCache + autoWallpaper + wisprFlow + dockDoor + mouseBoostPro + ultraPowerSave + textGrabber
+        // Ordered as shown in user's image + lockKeyboard + cameraPreview + timer + amphetamine + mouseJiggler + autoScroll + googlyEyes + volumeBoost + systemMonitor + loomRecorder + forceQuitApps + autoVPN + tidyFolders + adblockDNS + knockScreenshot + clipboardManager + stickyNotes + locationServices + ramGpuReset + cleanMacCache + autoWallpaper + wisprFlow + dockDoor + mouseBoostPro + ultraPowerSave + textGrabber + customWidgets + mediaPlayer
         let initialTypes: [SwitchType] = [
             .hideDesktop,
             .keepAwake,
@@ -718,7 +733,8 @@ public final class SwitchListViewModel: ObservableObject {
             .mouseBoostPro,
             .ultraPowerSave,
             .textGrabber,
-            .customWidgets
+            .customWidgets,
+            .mediaPlayer
         ]
         
         self.switches = initialTypes.map { type in
