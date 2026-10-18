@@ -38,7 +38,8 @@ public final class MediaPlayerWindowManager: NSObject, NSWindowDelegate, @unchec
         newWindow.titlebarAppearsTransparent = true
         newWindow.titleVisibility = .hidden
         newWindow.backgroundColor = .black
-        newWindow.isMovableByWindowBackground = false
+        newWindow.isMovable = true
+        newWindow.isMovableByWindowBackground = true
         newWindow.minSize = NSSize(width: 480, height: 320)
         newWindow.collectionBehavior = [.fullScreenPrimary]
         

@@ -94,6 +94,8 @@ public struct NativePlayerSurfaceView: NSViewRepresentable {
             onMouseMove?()
             if event.clickCount == 2 {
                 onDoubleClick?()
+            } else {
+                super.mouseDown(with: event)
             }
         }
         
@@ -190,6 +192,29 @@ public struct UniversalMediaPlayerView: View {
                 .allowsHitTesting(false)
             }
             
+            // 3b. Preparing / Remuxing Media Loading Indicator
+            if service.isPreparingMedia {
+                VStack(spacing: 12) {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: Color(red: 0.28, green: 0.76, blue: 0.52)))
+                        .scaleEffect(1.2)
+                    Text(service.preparingStatus)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.white.opacity(0.9))
+                }
+                .padding(24)
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(Color.black.opacity(0.85))
+                        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.12), lineWidth: 1))
+                )
+            }
+            
+            // 3c. Beautiful Empty State Drop Zone
+            if service.currentVideoURL == nil && !service.isPreparingMedia {
+                emptyStateDropZone
+            }
+            
             // 4. Floating Header Bar (Top Controls)
             VStack {
                 topBar
@@ -245,6 +270,60 @@ public struct UniversalMediaPlayerView: View {
         .sheet(isPresented: $state.showOpenURLPrompt) {
             openURLSheet
         }
+    }
+    
+    // MARK: - Empty State Drop Zone
+    
+    private var emptyStateDropZone: some View {
+        VStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(Color(red: 0.28, green: 0.76, blue: 0.52).opacity(0.12))
+                    .frame(width: 72, height: 72)
+                Image(systemName: "film.stack")
+                    .font(.system(size: 32, weight: .medium))
+                    .foregroundColor(Color(red: 0.28, green: 0.76, blue: 0.52))
+            }
+            VStack(spacing: 5) {
+                Text("Switch Video Player")
+                    .font(.system(size: 19, weight: .bold))
+                    .foregroundColor(.white)
+                Text("Drop any video here or click to open")
+                    .font(.system(size: 12.5))
+                    .foregroundColor(.white.opacity(0.6))
+            }
+            HStack(spacing: 6) {
+                ForEach(["MKV", "MP4", "AVI", "MOV", "WebM"], id: \.self) { fmt in
+                    Text(fmt)
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .foregroundColor(Color(red: 0.28, green: 0.76, blue: 0.52))
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(RoundedRectangle(cornerRadius: 5).fill(Color(red: 0.28, green: 0.76, blue: 0.52).opacity(0.12)))
+                }
+            }
+            Button(action: {
+                MediaPlayerWindowManager.shared.promptOpenFile()
+            }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "doc.badge.plus")
+                    Text("Open Video File... (⌘O)")
+                }
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundColor(.black)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 8)
+                .background(Capsule().fill(Color(red: 0.28, green: 0.76, blue: 0.52)))
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 4)
+        }
+        .padding(32)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color(red: 0.12, green: 0.14, blue: 0.18).opacity(0.85))
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.12), lineWidth: 1))
+        )
     }
     
     // MARK: - Top Header Bar
@@ -362,7 +441,8 @@ public struct UniversalMediaPlayerView: View {
                 .help("Toggle Playlist & Recents Drawer")
             }
         }
-        .padding(.horizontal, 18)
+        .padding(.leading, 78)
+        .padding(.trailing, 18)
         .padding(.top, 14)
         .padding(.bottom, 8)
         .background(

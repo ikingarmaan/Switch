@@ -82,7 +82,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .ultraPowerSave: return "Ultra Power Saver"
         case .textGrabber: return "Live Text (Copy Anywhere)"
         case .customWidgets: return "AI Desktop Widgets"
-        case .mediaPlayer: return "Universal Media Player"
+        case .mediaPlayer: return "Video Player"
         }
     }
     
@@ -124,7 +124,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .ultraPowerSave: return "bolt.batteryblock.fill"
         case .textGrabber: return "text.viewfinder"
         case .customWidgets: return "sparkles.rectangle.stack"
-        case .mediaPlayer: return "play.tv.fill"
+        case .mediaPlayer: return "play.rectangle.fill"
         }
     }
     

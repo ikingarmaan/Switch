@@ -70,6 +70,8 @@ public final class UniversalMediaPlayerService: ObservableObject, @unchecked Sen
     // Feedback & Toasts
     @Published public var statusToast: String? = nil
     @Published public var isDrawerOpen: Bool = false
+    @Published public var isPreparingMedia: Bool = false
+    @Published public var preparingStatus: String = ""
     
     // Saved Playback Positions (Persistence dictionary: URL string -> timestamp)
     private var savedPositions: [String: TimeInterval] = [:]
@@ -137,15 +139,133 @@ public final class UniversalMediaPlayerService: ObservableObject, @unchecked Sen
         openVideo(url: url)
     }
     
+    // MARK: - Format Compatibility & Automatic Remuxing Engine
+    
+    private func findFFmpeg() -> String? {
+        let candidates = [
+            "/opt/homebrew/bin/ffmpeg",
+            "/usr/local/bin/ffmpeg",
+            "/usr/bin/ffmpeg"
+        ]
+        for path in candidates {
+            if FileManager.default.isExecutableFile(atPath: path) {
+                return path
+            }
+        }
+        return nil
+    }
+    
+    private func resolvePlayableURL(from sourceURL: URL, completion: @escaping (URL) -> Void) {
+        let ext = sourceURL.pathExtension.lowercased()
+        let nativeExtensions = ["mp4", "mov", "m4v", "m3u8"]
+        if nativeExtensions.contains(ext) {
+            completion(sourceURL)
+            return
+        }
+        
+        let fileManager = FileManager.default
+        let cacheDir = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("SwitchPlayerCache")
+        try? fileManager.createDirectory(at: cacheDir, withIntermediateDirectories: true)
+        
+        // Use a clean filename
+        let safeName = sourceURL.deletingPathExtension().lastPathComponent.components(separatedBy: CharacterSet.alphanumerics.inverted).joined(separator: "_")
+        let targetMP4 = cacheDir.appendingPathComponent("\(safeName).mp4")
+        let targetSRT = cacheDir.appendingPathComponent("\(safeName).srt")
+        
+        // If already cached and valid size (>100KB), return immediately
+        if fileManager.fileExists(atPath: targetMP4.path),
+           let attrs = try? fileManager.attributesOfItem(atPath: targetMP4.path),
+           let size = attrs[.size] as? UInt64, size > 100 * 1024 {
+            if fileManager.fileExists(atPath: targetSRT.path) {
+                self.loadExternalSubtitle(fileURL: targetSRT)
+            }
+            completion(targetMP4)
+            return
+        }
+        
+        guard let ffmpeg = findFFmpeg() else {
+            // No ffmpeg installed, fallback to direct URL
+            completion(sourceURL)
+            return
+        }
+        
+        self.isPreparingMedia = true
+        self.preparingStatus = "Optimizing \(sourceURL.lastPathComponent)..."
+        
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            // Fast stream copy: -c copy -movflags +faststart
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: ffmpeg)
+            process.arguments = [
+                "-y",
+                "-i", sourceURL.path,
+                "-map", "0:v:0?",
+                "-map", "0:a?",
+                "-c", "copy",
+                "-movflags", "+faststart",
+                targetMP4.path
+            ]
+            
+            try? process.run()
+            process.waitUntilExit()
+            
+            // If direct stream copy failed (e.g. non-MP4 audio like Vorbis/FLAC/DTS), fallback to video copy + AAC audio
+            let remuxSucceeded = fileManager.fileExists(atPath: targetMP4.path) && ((try? fileManager.attributesOfItem(atPath: targetMP4.path)[.size] as? UInt64) ?? 0) > 1024
+            if !remuxSucceeded {
+                let fallback = Process()
+                fallback.executableURL = URL(fileURLWithPath: ffmpeg)
+                fallback.arguments = [
+                    "-y",
+                    "-i", sourceURL.path,
+                    "-map", "0:v:0?",
+                    "-map", "0:a?",
+                    "-c:v", "copy",
+                    "-c:a", "aac",
+                    "-b:a", "256k",
+                    "-movflags", "+faststart",
+                    targetMP4.path
+                ]
+                try? fallback.run()
+                fallback.waitUntilExit()
+            }
+            
+            // Extract embedded subtitles to SRT if available
+            if !fileManager.fileExists(atPath: targetSRT.path) {
+                let subProcess = Process()
+                subProcess.executableURL = URL(fileURLWithPath: ffmpeg)
+                subProcess.arguments = [
+                    "-y",
+                    "-i", sourceURL.path,
+                    "-map", "0:s:0?",
+                    targetSRT.path
+                ]
+                try? subProcess.run()
+                subProcess.waitUntilExit()
+            }
+            
+            DispatchQueue.main.async {
+                self?.isPreparingMedia = false
+                if fileManager.fileExists(atPath: targetMP4.path) {
+                    if fileManager.fileExists(atPath: targetSRT.path) {
+                        self?.loadExternalSubtitle(fileURL: targetSRT)
+                    }
+                    completion(targetMP4)
+                } else {
+                    completion(sourceURL)
+                }
+            }
+        }
+    }
+    
     public func loadCurrentPlaylistItem() {
         guard currentPlaylistIndex >= 0 && currentPlaylistIndex < playlist.count else { return }
         let item = playlist[currentPlaylistIndex]
-        let url = item.url
+        let originalURL = item.url
         
         // Save to recent files
-        addToRecentFiles(url: url)
+        addToRecentFiles(url: originalURL)
         
-        self.currentVideoURL = url
+        self.currentVideoURL = originalURL
         self.videoTitle = item.title
         self.currentTime = 0
         self.duration = 0
@@ -155,56 +275,59 @@ public final class UniversalMediaPlayerService: ObservableObject, @unchecked Sen
         self.availableSubtitles.removeAll()
         self.selectedSubtitleTrack = nil
         
-        let asset = AVURLAsset(url: url)
-        let playerItem = AVPlayerItem(asset: asset)
-        
-        // Configure pitch preservation for speed changing
-        playerItem.audioTimePitchAlgorithm = .timeDomain
-        
-        player.replaceCurrentItem(with: playerItem)
-        applyVolumeSettings()
-        
-        // Fetch track dimensions and duration asynchronously
-        Task { [weak self] in
+        resolvePlayableURL(from: originalURL) { [weak self] playableURL in
             guard let self = self else { return }
             
-            if let d = try? await asset.load(.duration) {
-                let seconds = CMTimeGetSeconds(d)
-                if seconds.isFinite && seconds > 0 {
-                    self.duration = seconds
-                }
-            }
+            let asset = AVURLAsset(url: playableURL)
+            let playerItem = AVPlayerItem(asset: asset)
             
-            if let tracks = try? await asset.loadTracks(withMediaType: .video),
-               let first = tracks.first,
-               let size = try? await first.load(.naturalSize),
-               let transform = try? await first.load(.preferredTransform) {
+            // Configure pitch preservation for speed changing
+            playerItem.audioTimePitchAlgorithm = .timeDomain
+            
+            self.player.replaceCurrentItem(with: playerItem)
+            self.applyVolumeSettings()
+            
+            // Fetch track dimensions and duration asynchronously
+            Task { [weak self] in
+                guard let self = self else { return }
                 
-                // Adjust for rotation transform (e.g. vertical iPhone videos)
-                let rect = CGRect(origin: .zero, size: size).applying(transform)
-                let adjustedSize = CGSize(width: abs(rect.width), height: abs(rect.height))
-                
-                if adjustedSize.width > 0 && adjustedSize.height > 0 {
-                    self.nativeVideoSize = adjustedSize
-                    Task { @MainActor in
-                        MediaPlayerWindowManager.shared.adjustWindowToVideoSize(adjustedSize)
+                if let d = try? await asset.load(.duration) {
+                    let seconds = CMTimeGetSeconds(d)
+                    if seconds.isFinite && seconds > 0 {
+                        self.duration = seconds
                     }
                 }
+                
+                if let tracks = try? await asset.loadTracks(withMediaType: .video),
+                   let first = tracks.first,
+                   let size = try? await first.load(.naturalSize),
+                   let transform = try? await first.load(.preferredTransform) {
+                    
+                    let rect = CGRect(origin: .zero, size: size).applying(transform)
+                    let adjustedSize = CGSize(width: abs(rect.width), height: abs(rect.height))
+                    
+                    if adjustedSize.width > 0 && adjustedSize.height > 0 {
+                        self.nativeVideoSize = adjustedSize
+                        Task { @MainActor in
+                            MediaPlayerWindowManager.shared.adjustWindowToVideoSize(adjustedSize)
+                        }
+                    }
+                }
+                
+                // Discover embedded and external subtitles
+                self.discoverSubtitles(for: originalURL, asset: asset)
+                
+                // Discover audio tracks
+                self.discoverAudioTracks(asset: asset)
+                
+                // Check if there was a saved playback position
+                if let saved = self.savedPositions[originalURL.absoluteString], saved > 10, saved < (self.duration - 10) {
+                    self.seek(to: saved)
+                    self.showToast("Resumed from \(self.formatTime(saved))")
+                }
+                
+                self.play()
             }
-            
-            // Discover embedded and external subtitles
-            self.discoverSubtitles(for: url, asset: asset)
-            
-            // Discover audio tracks
-            self.discoverAudioTracks(asset: asset)
-            
-            // Check if there was a saved playback position
-            if let saved = self.savedPositions[url.absoluteString], saved > 10, saved < (self.duration - 10) {
-                self.seek(to: saved)
-                self.showToast("Resumed from \(self.formatTime(saved))")
-            }
-            
-            self.play()
         }
     }
     
@@ -640,11 +763,9 @@ public final class UniversalMediaPlayerService: ObservableObject, @unchecked Sen
     
     public var statusSubtitle: String {
         if isPlaying {
-            return "▶ \(videoTitle) (\(formatTime(currentTime)))"
-        } else if currentVideoURL != nil {
-            return "❚❚ \(videoTitle)"
+            return "Playing"
         } else {
-            return "VLC + IINA Player Ready"
+            return ""
         }
     }
     
