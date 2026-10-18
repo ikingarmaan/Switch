@@ -24,47 +24,6 @@
     <string>13.0</string>
     <key>LSUIElement</key>
     <true/>
-    <key>CFBundleDocumentTypes</key>
-    <array>
-        <dict>
-            <key>CFBundleTypeName</key>
-            <string>Video and Audio Media</string>
-            <key>CFBundleTypeRole</key>
-            <string>Viewer</string>
-            <key>LSHandlerRank</key>
-            <string>Owner</string>
-            <key>LSItemContentTypes</key>
-            <array>
-                <string>public.movie</string>
-                <string>public.video</string>
-                <string>public.audio</string>
-                <string>public.audiovisual-content</string>
-                <string>com.apple.quicktime-movie</string>
-                <string>public.mpeg-4</string>
-                <string>public.avi</string>
-                <string>org.matroska.mkv</string>
-                <string>com.microsoft.windows-media-wmv</string>
-            </array>
-            <key>CFBundleTypeExtensions</key>
-            <array>
-                <string>mp4</string>
-                <string>mov</string>
-                <string>mkv</string>
-                <string>avi</string>
-                <string>webm</string>
-                <string>m4v</string>
-                <string>flv</string>
-                <string>ts</string>
-                <string>wmv</string>
-                <string>3gp</string>
-                <string>mp3</string>
-                <string>m4a</string>
-                <string>wav</string>
-                <string>flac</string>
-                <string>aac</string>
-            </array>
-        </dict>
-    </array>
     <key>CFBundleURLTypes</key>
     <array>
         <dict>

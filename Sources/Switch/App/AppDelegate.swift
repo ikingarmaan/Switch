@@ -59,8 +59,6 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
         _ = UltraPowerSaveService.shared
         _ = TextGrabberService.shared
         _ = WidgetStudioService.shared
-        _ = UniversalMediaPlayerService.shared
-        _ = MediaPlayerWindowManager.shared
         _ = GlobalHotkeyService.shared
         GlobalHotkeyService.shared.registerGlobalHotkey()
         
@@ -114,22 +112,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
     }
     
     public func application(_ application: NSApplication, open urls: [URL]) {
-        var mediaURLs: [URL] = []
         for url in urls {
-            if url.scheme?.lowercased() == "switch" {
-                handleDeepLink(url: url)
-            } else {
-                mediaURLs.append(url)
-            }
+            handleDeepLink(url: url)
         }
-        if !mediaURLs.isEmpty {
-            UniversalMediaPlayerService.shared.openVideos(urls: mediaURLs)
-        }
-    }
-    
-    public func application(_ sender: NSApplication, openFiles filenames: [String]) {
-        let urls = filenames.map { URL(fileURLWithPath: $0) }
-        UniversalMediaPlayerService.shared.openVideos(urls: urls)
     }
     
     private func handleDeepLink(url: URL) {

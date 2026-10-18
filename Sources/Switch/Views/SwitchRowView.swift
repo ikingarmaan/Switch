@@ -72,30 +72,6 @@ public struct SwitchRowView: View {
                 item.isHovered = hovering
             }
         }
-        .contextMenu {
-            if item.type == .mediaPlayer {
-                Button(action: {
-                    MediaPlayerWindowManager.shared.showWindow()
-                }) {
-                    Label("Open Video Player", systemImage: "play.rectangle.fill")
-                }
-                
-                Button(action: {
-                    MediaPlayerWindowManager.shared.showWindow()
-                    MediaPlayerWindowManager.shared.promptOpenFile()
-                }) {
-                    Label("Open Video File... (⌘O)", systemImage: "doc.badge.plus")
-                }
-                
-                Divider()
-                
-                Button(action: {
-                    UniversalMediaPlayerService.shared.setAsDefaultVideoPlayer()
-                }) {
-                    Label("Set as Default Mac Video Player", systemImage: "checkmark.seal.fill")
-                }
-            }
-        }
     }
     
     @ViewBuilder
