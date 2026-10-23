@@ -198,6 +198,7 @@ public struct StickyNote: Identifiable, Codable, Equatable, Sendable {
     public var fontSize: StickyNoteFontSize
     public var isChecklistMode: Bool
     public var checklistItems: [StickyChecklistItem]
+    public var isClosed: Bool
     public var createdAt: Date
     public var updatedAt: Date
     
@@ -215,6 +216,7 @@ public struct StickyNote: Identifiable, Codable, Equatable, Sendable {
         fontSize: StickyNoteFontSize = .regular,
         isChecklistMode: Bool = false,
         checklistItems: [StickyChecklistItem] = [],
+        isClosed: Bool = false,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -231,27 +233,29 @@ public struct StickyNote: Identifiable, Codable, Equatable, Sendable {
         self.fontSize = fontSize
         self.isChecklistMode = isChecklistMode
         self.checklistItems = checklistItems
+        self.isClosed = isClosed
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
     
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.id = try container.decode(UUID.self, forKey: .id)
-        self.content = try container.decode(String.self, forKey: .content)
-        self.color = try container.decode(StickyNoteColor.self, forKey: .color)
-        self.x = try container.decode(CGFloat.self, forKey: .x)
-        self.y = try container.decode(CGFloat.self, forKey: .y)
-        self.width = try container.decode(CGFloat.self, forKey: .width)
-        self.height = try container.decode(CGFloat.self, forKey: .height)
-        self.isPinnedToDesktop = try container.decode(Bool.self, forKey: .isPinnedToDesktop)
-        self.isCollapsed = try container.decode(Bool.self, forKey: .isCollapsed)
+        self.id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        self.content = try container.decodeIfPresent(String.self, forKey: .content) ?? ""
+        self.color = try container.decodeIfPresent(StickyNoteColor.self, forKey: .color) ?? .yellow
+        self.x = try container.decodeIfPresent(CGFloat.self, forKey: .x) ?? 100
+        self.y = try container.decodeIfPresent(CGFloat.self, forKey: .y) ?? 100
+        self.width = try container.decodeIfPresent(CGFloat.self, forKey: .width) ?? 260
+        self.height = try container.decodeIfPresent(CGFloat.self, forKey: .height) ?? 240
+        self.isPinnedToDesktop = try container.decodeIfPresent(Bool.self, forKey: .isPinnedToDesktop) ?? true
+        self.isCollapsed = try container.decodeIfPresent(Bool.self, forKey: .isCollapsed) ?? false
         self.textAlignment = try container.decodeIfPresent(StickyNoteTextAlignment.self, forKey: .textAlignment) ?? .left
         self.fontSize = try container.decodeIfPresent(StickyNoteFontSize.self, forKey: .fontSize) ?? .regular
         self.isChecklistMode = try container.decodeIfPresent(Bool.self, forKey: .isChecklistMode) ?? false
         self.checklistItems = try container.decodeIfPresent([StickyChecklistItem].self, forKey: .checklistItems) ?? []
-        self.createdAt = try container.decode(Date.self, forKey: .createdAt)
-        self.updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        self.isClosed = try container.decodeIfPresent(Bool.self, forKey: .isClosed) ?? false
+        self.createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+        self.updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
     }
 }
 
@@ -274,6 +278,14 @@ public final class StickyNotePanel: NSPanel {
         }
         super.sendEvent(event)
     }
+    
+    public override func performClose(_ sender: Any?) {
+        if let id = noteId {
+            StickyNotesService.shared.closeNote(id: id)
+        } else {
+            orderOut(sender)
+        }
+    }
 }
 
 // MARK: - Service
@@ -283,14 +295,25 @@ public final class StickyNotesService: ObservableObject, @unchecked Sendable {
     private let keyEnabled = "switch.stickyNotes.enabled"
     private let keyDefaultColor = "switch.stickyNotes.defaultColor"
     private let keyDefaultPin = "switch.stickyNotes.defaultPin"
+    private let userDefaultsBackupKey = "switch.stickyNotes.snapshotBackup"
     
     @Published public private(set) var notes: [StickyNote] = []
     @Published public private(set) var isVisible: Bool = true
     @Published public var defaultColor: StickyNoteColor = .yellow
     @Published public var defaultPinToDesktop: Bool = true
     
+    public var activeNotes: [StickyNote] {
+        notes.filter { !$0.isClosed }
+    }
+    
+    public var closedNotes: [StickyNote] {
+        notes.filter { $0.isClosed }
+    }
+    
     private var noteWindows: [UUID: StickyNotePanel] = [:]
     private var saveDebounceTimer: Timer?
+    private var hasLoadedNotesSuccessfully: Bool = false
+    private var lastSnapshotBackupTime: Date = Date.distantPast
     
     private var supportDirectory: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -304,16 +327,31 @@ public final class StickyNotesService: ObservableObject, @unchecked Sendable {
         supportDirectory.appendingPathComponent("sticky_notes.json")
     }
     
+    private var archiveFileURL: URL {
+        supportDirectory.appendingPathComponent("sticky_notes_permanent_archive.json")
+    }
+    
+    private var backupsDirectory: URL {
+        let dir = supportDirectory.appendingPathComponent("StickyNotesBackups", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+    
     public var statusSubtitle: String {
         if !isVisible {
             return "Hidden"
         }
-        if notes.isEmpty {
+        let active = activeNotes
+        if active.isEmpty {
+            let closed = closedNotes
+            if !closed.isEmpty {
+                return "\(closed.count) saved • Click +"
+            }
             return "0 notes • Click +"
         }
-        let countStr = "\(notes.count) \(notes.count == 1 ? "note" : "notes")"
-        let allPinned = notes.allSatisfy { $0.isPinnedToDesktop }
-        let allFloating = notes.allSatisfy { !$0.isPinnedToDesktop }
+        let countStr = "\(active.count) \(active.count == 1 ? "note" : "notes")"
+        let allPinned = active.allSatisfy { $0.isPinnedToDesktop }
+        let allFloating = active.allSatisfy { !$0.isPinnedToDesktop }
         
         if allPinned {
             return "\(countStr) • On Desktop"
@@ -354,8 +392,12 @@ public final class StickyNotesService: ObservableObject, @unchecked Sendable {
         UserDefaults.standard.set(visible, forKey: keyEnabled)
         
         if visible {
-            if notes.isEmpty {
-                createWelcomeNote()
+            if activeNotes.isEmpty {
+                if !closedNotes.isEmpty {
+                    reopenAllNotes()
+                } else if notes.isEmpty {
+                    createWelcomeNote()
+                }
             } else {
                 presentAllNotes()
             }
@@ -384,7 +426,7 @@ public final class StickyNotesService: ObservableObject, @unchecked Sendable {
         // Calculate a nice default position cascading from top-right
         var origin = NSPoint(x: 100, y: 100)
         if let screen = NSScreen.main {
-            let offset = CGFloat((notes.count % 8) * 28)
+            let offset = CGFloat((activeNotes.count % 8) * 28)
             let x = screen.visibleFrame.maxX - 290 - offset
             let y = screen.visibleFrame.maxY - 280 - offset
             origin = NSPoint(x: max(screen.visibleFrame.minX + 20, x), y: max(screen.visibleFrame.minY + 20, y))
@@ -404,12 +446,13 @@ public final class StickyNotesService: ObservableObject, @unchecked Sendable {
             fontSize: fontSize,
             isChecklistMode: isChecklist,
             checklistItems: checklistItems,
+            isClosed: false,
             createdAt: Date(),
             updatedAt: Date()
         )
         
         notes.append(newNote)
-        saveNotesDebounced()
+        saveNotesImmediate()
         
         if !isVisible {
             isVisible = true
@@ -418,29 +461,85 @@ public final class StickyNotesService: ObservableObject, @unchecked Sendable {
         }
         
         presentNoteWindow(for: newNote, makeKey: true)
-        NotificationCenter.default.post(name: .stickyNotesCountDidChange, object: notes.count)
+        NotificationCenter.default.post(name: .stickyNotesCountDidChange, object: activeNotes.count)
         
         return newNote
     }
     
-    public func deleteNote(id: UUID) {
+    // MARK: - Safe Retention Actions (Never Delete Any Notes!)
+    
+    public func closeNote(id: UUID) {
         if let panel = noteWindows[id] {
             panel.orderOut(nil)
             noteWindows.removeValue(forKey: id)
         }
-        notes.removeAll(where: { $0.id == id })
-        saveNotesDebounced()
-        NotificationCenter.default.post(name: .stickyNotesCountDidChange, object: notes.count)
+        if let index = notes.firstIndex(where: { $0.id == id }) {
+            notes[index].isClosed = true
+            notes[index].updatedAt = Date()
+        }
+        saveNotesImmediate()
+        NotificationCenter.default.post(name: .stickyNotesCountDidChange, object: activeNotes.count)
     }
     
-    public func deleteAllNotes() {
+    public func closeAllNotes() {
         for (_, panel) in noteWindows {
             panel.orderOut(nil)
         }
         noteWindows.removeAll()
-        notes.removeAll()
-        saveNotesDebounced()
+        for index in notes.indices {
+            notes[index].isClosed = true
+            notes[index].updatedAt = Date()
+        }
+        saveNotesImmediate()
         NotificationCenter.default.post(name: .stickyNotesCountDidChange, object: 0)
+    }
+    
+    public func reopenNote(id: UUID) {
+        guard let index = notes.firstIndex(where: { $0.id == id }) else { return }
+        notes[index].isClosed = false
+        notes[index].updatedAt = Date()
+        saveNotesImmediate()
+        
+        if !isVisible {
+            isVisible = true
+            UserDefaults.standard.set(true, forKey: keyEnabled)
+            NotificationCenter.default.post(name: .stickyNotesStateDidChange, object: true)
+        }
+        
+        presentNoteWindow(for: notes[index], makeKey: true)
+        NotificationCenter.default.post(name: .stickyNotesCountDidChange, object: activeNotes.count)
+    }
+    
+    public func reopenAllNotes() {
+        for index in notes.indices {
+            notes[index].isClosed = false
+            notes[index].updatedAt = Date()
+        }
+        saveNotesImmediate()
+        
+        if !isVisible {
+            isVisible = true
+            UserDefaults.standard.set(true, forKey: keyEnabled)
+            NotificationCenter.default.post(name: .stickyNotesStateDidChange, object: true)
+        }
+        
+        presentAllNotes()
+        NotificationCenter.default.post(name: .stickyNotesCountDidChange, object: activeNotes.count)
+    }
+    
+    // CRITICAL USER REQUIREMENT: Never delete any sticky note, even if delete was requested.
+    // Close / archive from screen instead, keeping 100% of the content and history intact.
+    public func deleteNote(id: UUID) {
+        closeNote(id: id)
+    }
+    
+    public func deleteAllNotes() {
+        closeAllNotes()
+    }
+    
+    public func openBackupsFolderInFinder() {
+        let dir = supportDirectory
+        NSWorkspace.shared.selectFile(storageFileURL.path, inFileViewerRootedAtPath: dir.path)
     }
     
     public func updateNoteContent(id: UUID, content: String) {
@@ -635,7 +734,7 @@ public final class StickyNotesService: ObservableObject, @unchecked Sendable {
     // MARK: - Window Management
     
     public func presentAllNotes() {
-        for note in notes {
+        for note in activeNotes {
             presentNoteWindow(for: note, makeKey: false)
         }
     }
@@ -759,15 +858,23 @@ public final class StickyNotesService: ObservableObject, @unchecked Sendable {
         }
     }
     
-    // MARK: - Welcome Note
+    // MARK: - Welcome Note (Safe Guarded)
     
     private func createWelcomeNote() {
+        guard notes.isEmpty else { return }
+        // Never overwrite if existing notes exist anywhere
+        if FileManager.default.fileExists(atPath: storageFileURL.path) ||
+           FileManager.default.fileExists(atPath: archiveFileURL.path) ||
+           UserDefaults.standard.object(forKey: userDefaultsBackupKey) != nil {
+            return
+        }
+        
         let welcomeItems = [
             StickyChecklistItem(title: "Welcome to Sticky Notes! 🎨", isCompleted: true),
             StickyChecklistItem(title: "Click checkbox to mark done ☑️", isCompleted: false),
             StickyChecklistItem(title: "Click ≡ in format bar for Left/Center/Right alignment", isCompleted: false),
             StickyChecklistItem(title: "Click 📌 to pin to Desktop (Home Page)", isCompleted: false),
-            StickyChecklistItem(title: "Drag me anywhere by top header", isCompleted: false)
+            StickyChecklistItem(title: "Your notes are permanently safe & never deleted", isCompleted: false)
         ]
         createNote(
             color: .yellow,
@@ -779,7 +886,7 @@ public final class StickyNotesService: ObservableObject, @unchecked Sendable {
         )
     }
     
-    // MARK: - Disk Persistence
+    // MARK: - Multi-Tier Disk & Backup Persistence
     
     private func saveNotesDebounced() {
         saveDebounceTimer?.invalidate()
@@ -790,25 +897,186 @@ public final class StickyNotesService: ObservableObject, @unchecked Sendable {
     
     public func saveNotesImmediate() {
         let itemsToSave = self.notes
+        
+        // CRITICAL PROTECTION: Never overwrite existing disk file with empty data if loading failed
+        if itemsToSave.isEmpty && !self.hasLoadedNotesSuccessfully {
+            return
+        }
+        
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self = self else { return }
             do {
-                let data = try JSONEncoder().encode(itemsToSave)
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.prettyPrinted]
+                let data = try encoder.encode(itemsToSave)
+                
+                // 1. Primary storage file (atomic write)
                 try data.write(to: self.storageFileURL, options: .atomic)
+                
+                // 2. Permanent archive mirror (atomic write)
+                try data.write(to: self.archiveFileURL, options: .atomic)
+                
+                // 3. System Preferences snapshot backup (UserDefaults)
+                UserDefaults.standard.set(data, forKey: self.userDefaultsBackupKey)
+                
+                // 4. Timestamped rolling backup if notes exist and > 5 mins since last snapshot
+                if !itemsToSave.isEmpty && Date().timeIntervalSince(self.lastSnapshotBackupTime) > 300 {
+                    self.lastSnapshotBackupTime = Date()
+                    let formatter = DateFormatter()
+                    formatter.dateFormat = "yyyyMMdd_HHmmss"
+                    let backupFileName = "sticky_notes_\(formatter.string(from: Date())).json"
+                    let backupFileURL = self.backupsDirectory.appendingPathComponent(backupFileName)
+                    try? data.write(to: backupFileURL, options: .atomic)
+                    
+                    self.pruneOldBackups()
+                }
             } catch {
                 print("Failed to save sticky notes: \(error)")
             }
         }
     }
     
-    private func loadNotes() {
-        guard FileManager.default.fileExists(atPath: storageFileURL.path) else { return }
-        do {
-            let data = try Data(contentsOf: storageFileURL)
-            let loaded = try JSONDecoder().decode([StickyNote].self, from: data)
-            self.notes = loaded
-        } catch {
-            print("Failed to load sticky notes: \(error)")
+    private func pruneOldBackups() {
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(at: backupsDirectory, includingPropertiesForKeys: [.contentModificationDateKey]) else { return }
+        let jsonFiles = files.filter { $0.pathExtension == "json" }
+        if jsonFiles.count > 100 {
+            let sorted = jsonFiles.sorted {
+                let d1 = (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date.distantPast
+                let d2 = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date.distantPast
+                return d1 < d2
+            }
+            for file in sorted.prefix(jsonFiles.count - 100) {
+                try? fm.removeItem(at: file)
+            }
         }
+    }
+    
+    // MARK: - Resilient Multi-Tier Loader
+    
+    private func loadNotes() {
+        // Priority 1: Primary storage file
+        if let loaded = readNotesFromFile(url: storageFileURL), !loaded.isEmpty {
+            self.notes = loaded
+            self.hasLoadedNotesSuccessfully = true
+            return
+        }
+        
+        // Priority 2: Permanent mirror archive file
+        if let loaded = readNotesFromFile(url: archiveFileURL), !loaded.isEmpty {
+            self.notes = loaded
+            self.hasLoadedNotesSuccessfully = true
+            saveNotesImmediate()
+            return
+        }
+        
+        // Priority 3: Scan latest valid backup from StickyNotesBackups/
+        if let backup = findLatestValidBackup(), let loaded = readNotesFromFile(url: backup), !loaded.isEmpty {
+            self.notes = loaded
+            self.hasLoadedNotesSuccessfully = true
+            saveNotesImmediate()
+            return
+        }
+        
+        // Priority 4: UserDefaults snapshot
+        if let data = UserDefaults.standard.data(forKey: userDefaultsBackupKey),
+           let loaded = decodeNotes(from: data), !loaded.isEmpty {
+            self.notes = loaded
+            self.hasLoadedNotesSuccessfully = true
+            saveNotesImmediate()
+            return
+        }
+        
+        // Priority 5: Fallback raw dictionary recovery if files exist but decode failed
+        if FileManager.default.fileExists(atPath: storageFileURL.path),
+           let data = try? Data(contentsOf: storageFileURL),
+           let recovered = recoverNotesFromRawJSON(data: data), !recovered.isEmpty {
+            self.notes = recovered
+            self.hasLoadedNotesSuccessfully = true
+            saveNotesImmediate()
+            return
+        }
+        
+        self.hasLoadedNotesSuccessfully = true
+    }
+    
+    private func readNotesFromFile(url: URL) -> [StickyNote]? {
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        guard let data = try? Data(contentsOf: url), !data.isEmpty else { return nil }
+        return decodeNotes(from: data) ?? recoverNotesFromRawJSON(data: data)
+    }
+    
+    private func decodeNotes(from data: Data) -> [StickyNote]? {
+        if let loaded = try? JSONDecoder().decode([StickyNote].self, from: data) {
+            return loaded
+        }
+        return nil
+    }
+    
+    private func findLatestValidBackup() -> URL? {
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(at: backupsDirectory, includingPropertiesForKeys: [.contentModificationDateKey]) else { return nil }
+        let jsonFiles = files.filter { $0.pathExtension == "json" }
+        let sorted = jsonFiles.sorted {
+            let d1 = (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date.distantPast
+            let d2 = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date.distantPast
+            return d1 > d2
+        }
+        return sorted.first
+    }
+    
+    private func recoverNotesFromRawJSON(data: Data) -> [StickyNote]? {
+        guard let rawObj = try? JSONSerialization.jsonObject(with: data, options: []),
+              let arr = rawObj as? [[String: Any]] else { return nil }
+        
+        var recovered: [StickyNote] = []
+        for dict in arr {
+            let id = UUID(uuidString: dict["id"] as? String ?? "") ?? UUID()
+            let content = dict["content"] as? String ?? ""
+            let colorStr = dict["color"] as? String ?? "yellow"
+            let color = StickyNoteColor(rawValue: colorStr) ?? .yellow
+            let x = CGFloat(dict["x"] as? Double ?? 100)
+            let y = CGFloat(dict["y"] as? Double ?? 100)
+            let width = CGFloat(dict["width"] as? Double ?? 260)
+            let height = CGFloat(dict["height"] as? Double ?? 240)
+            let isPinned = dict["isPinnedToDesktop"] as? Bool ?? true
+            let isCollapsed = dict["isCollapsed"] as? Bool ?? false
+            let alignStr = dict["textAlignment"] as? String ?? "left"
+            let alignment = StickyNoteTextAlignment(rawValue: alignStr) ?? .left
+            let fontStr = dict["fontSize"] as? String ?? "regular"
+            let fontSize = StickyNoteFontSize(rawValue: fontStr) ?? .regular
+            let isChecklist = dict["isChecklistMode"] as? Bool ?? false
+            let isClosed = dict["isClosed"] as? Bool ?? false
+            
+            var checklistItems: [StickyChecklistItem] = []
+            if let rawItems = dict["checklistItems"] as? [[String: Any]] {
+                for itemDict in rawItems {
+                    let itemId = UUID(uuidString: itemDict["id"] as? String ?? "") ?? UUID()
+                    let title = itemDict["title"] as? String ?? ""
+                    let isCompleted = itemDict["isCompleted"] as? Bool ?? false
+                    checklistItems.append(StickyChecklistItem(id: itemId, title: title, isCompleted: isCompleted))
+                }
+            }
+            
+            recovered.append(StickyNote(
+                id: id,
+                content: content,
+                color: color,
+                x: x,
+                y: y,
+                width: width,
+                height: height,
+                isPinnedToDesktop: isPinned,
+                isCollapsed: isCollapsed,
+                textAlignment: alignment,
+                fontSize: fontSize,
+                isChecklistMode: isChecklist,
+                checklistItems: checklistItems,
+                isClosed: isClosed,
+                createdAt: Date(),
+                updatedAt: Date()
+            ))
+        }
+        return recovered.isEmpty ? nil : recovered
     }
 }

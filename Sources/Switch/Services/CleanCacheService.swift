@@ -395,6 +395,11 @@ public final class CleanCacheService: NSObject, ObservableObject, @unchecked Sen
                     if seenBundleIDs.contains(bundleId) { continue }
                     seenBundleIDs.insert(bundleId)
                     
+                    // CRITICAL: Protect Switch itself from ever being scanned or cleared
+                    if bundleId == Bundle.main.bundleIdentifier || name.lowercased() == "switch" || bundleId.contains("com.switch") {
+                        continue
+                    }
+                    
                     let version = (bundle.infoDictionary?["CFBundleShortVersionString"] as? String)
                         ?? (bundle.infoDictionary?["CFBundleVersion"] as? String)
                         ?? "1.0"

@@ -1602,13 +1602,40 @@ public struct SwitchRowView: View {
                             
                             Divider()
                             
+                            let closedNotes = StickyNotesService.shared.closedNotes
+                            if !closedNotes.isEmpty {
+                                Section("Saved Notes (\(closedNotes.count) closed)") {
+                                    Button(action: {
+                                        StickyNotesService.shared.reopenAllNotes()
+                                    }) {
+                                        HStack {
+                                            Text("Reopen All (\(closedNotes.count))")
+                                            Image(systemName: "arrow.counterclockwise")
+                                        }
+                                    }
+                                    
+                                    ForEach(closedNotes.prefix(8)) { note in
+                                        Button(action: {
+                                            StickyNotesService.shared.reopenNote(id: note.id)
+                                        }) {
+                                            HStack {
+                                                Text(stickyNoteSnippet(note: note))
+                                                Image(systemName: "note.text")
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                Divider()
+                            }
+                            
                             Section("Placement") {
                                 Button(action: {
                                     StickyNotesService.shared.setPinAllToDesktop(true)
                                 }) {
                                     HStack {
                                         Text("Pin All to Desktop (Home Page)")
-                                        if StickyNotesService.shared.notes.allSatisfy({ $0.isPinnedToDesktop }) && !StickyNotesService.shared.notes.isEmpty {
+                                        if StickyNotesService.shared.activeNotes.allSatisfy({ $0.isPinnedToDesktop }) && !StickyNotesService.shared.activeNotes.isEmpty {
                                             Image(systemName: "checkmark")
                                         }
                                     }
@@ -1619,7 +1646,7 @@ public struct SwitchRowView: View {
                                 }) {
                                     HStack {
                                         Text("Float All on Top")
-                                        if StickyNotesService.shared.notes.allSatisfy({ !$0.isPinnedToDesktop }) && !StickyNotesService.shared.notes.isEmpty {
+                                        if StickyNotesService.shared.activeNotes.allSatisfy({ !$0.isPinnedToDesktop }) && !StickyNotesService.shared.activeNotes.isEmpty {
                                             Image(systemName: "checkmark")
                                         }
                                     }
@@ -1654,14 +1681,23 @@ public struct SwitchRowView: View {
                                 }
                             }
                             
+                            Button(action: {
+                                StickyNotesService.shared.closeAllNotes()
+                            }) {
+                                HStack {
+                                    Text("Hide All Notes from Screen")
+                                    Image(systemName: "eye.slash")
+                                }
+                            }
+                            
                             Divider()
                             
                             Button(action: {
-                                StickyNotesService.shared.deleteAllNotes()
+                                StickyNotesService.shared.openBackupsFolderInFinder()
                             }) {
                                 HStack {
-                                    Text("Delete All Notes (\(StickyNotesService.shared.notes.count))")
-                                    Image(systemName: "trash")
+                                    Text("Open Notes Backup Folder...")
+                                    Image(systemName: "folder")
                                 }
                             }
                         } label: {
@@ -1702,6 +1738,26 @@ public struct SwitchRowView: View {
                         Divider()
                         
                         Button(action: {
+                            StickyNotesService.shared.reopenAllNotes()
+                        }) {
+                            HStack {
+                                Text("Reopen All Saved Notes")
+                                Image(systemName: "arrow.counterclockwise")
+                            }
+                        }
+                        
+                        Button(action: {
+                            StickyNotesService.shared.closeAllNotes()
+                        }) {
+                            HStack {
+                                Text("Hide All Notes from Screen")
+                                Image(systemName: "eye.slash")
+                            }
+                        }
+                        
+                        Divider()
+                        
+                        Button(action: {
                             StickyNotesService.shared.setPinAllToDesktop(true)
                         }) {
                             HStack {
@@ -1722,11 +1778,11 @@ public struct SwitchRowView: View {
                         Divider()
                         
                         Button(action: {
-                            StickyNotesService.shared.deleteAllNotes()
+                            StickyNotesService.shared.openBackupsFolderInFinder()
                         }) {
                             HStack {
-                                Text("Delete All Notes")
-                                Image(systemName: "trash")
+                                Text("Open Notes Backup Folder in Finder")
+                                Image(systemName: "folder")
                             }
                         }
                     }
@@ -2877,6 +2933,24 @@ public struct SwitchRowView: View {
                         .font(.system(size: 12, weight: .regular))
                         .foregroundColor(Color.gray.opacity(0.85))
                 }
+    }
+    
+    private func stickyNoteSnippet(note: StickyNote) -> String {
+        if note.isChecklistMode {
+            let firstIncomplete = note.checklistItems.first(where: { !$0.isCompleted })?.title
+            let firstAny = note.checklistItems.first?.title
+            let title = (firstIncomplete?.isEmpty == false ? firstIncomplete : firstAny) ?? "Checklist"
+            return "☑️ " + (title.count > 20 ? String(title.prefix(20)) + "…" : title)
+        } else {
+            let text = note.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            if text.isEmpty {
+                let df = DateFormatter()
+                df.timeStyle = .short
+                return "Note from \(df.string(from: note.createdAt))"
+            }
+            let firstLine = text.components(separatedBy: .newlines).first?.trimmingCharacters(in: .whitespaces) ?? text
+            return firstLine.count > 20 ? String(firstLine.prefix(20)) + "…" : firstLine
+        }
     }
 }
 

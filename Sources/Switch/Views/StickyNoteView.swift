@@ -160,13 +160,13 @@ public struct StickyNoteView: View {
             WindowDragAreaView()
             
             HStack(spacing: 5) {
-                // Close / Delete
+                // Close / Hide Note (Never Deleted • Saved in Note History)
                 Button(action: {
-                    service.deleteNote(id: note.id)
+                    service.closeNote(id: note.id)
                 }) {
                     ZStack {
                         Circle()
-                            .fill(viewState.isHoveringDelete ? Color.red.opacity(0.85) : note.color.headerButtonBg)
+                            .fill(viewState.isHoveringDelete ? Color.orange.opacity(0.85) : note.color.headerButtonBg)
                             .frame(width: 18, height: 18)
                         
                         Image(systemName: "xmark")
@@ -175,7 +175,7 @@ public struct StickyNoteView: View {
                     }
                 }
                 .buttonStyle(.plain)
-                .help("Delete Note")
+                .help("Close Note (Saved safely in History • Never deleted)")
                 .onHover { viewState.isHoveringDelete = $0 }
                 
                 // Collapse / Expand
@@ -601,6 +601,16 @@ public struct StickyNoteView: View {
                     .font(.system(size: 10, weight: .medium, design: .rounded))
                     .foregroundColor(note.color.secondaryTextColor)
             }
+            
+            HStack(spacing: 3) {
+                Image(systemName: "checkmark.shield.fill")
+                    .font(.system(size: 8))
+                    .foregroundColor(Color.green.opacity(0.85))
+                Text("Saved")
+                    .font(.system(size: 9, weight: .medium, design: .rounded))
+                    .foregroundColor(note.color.secondaryTextColor.opacity(0.8))
+            }
+            .help("Auto-saved & permanently protected. Never deleted.")
             
             Spacer()
             
