@@ -18,79 +18,57 @@ public struct SwitchListView: View {
                 Spacer()
             }
             
-            // Search Bar & AI Widgets Quick Button
-            HStack(spacing: 6) {
-                HStack(spacing: 7) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 11.5, weight: .semibold))
-                        .foregroundColor(viewModel.searchText.isEmpty ? Color.gray.opacity(0.8) : Color(red: 0.28, green: 0.76, blue: 0.52))
-                    
-                    TextField("Search switches...", text: $viewModel.searchText)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 12.5, weight: .regular))
-                        .foregroundColor(.white)
-                        .onSubmit {
-                            if let firstMatch = viewModel.visibleSwitches.first {
-                                if firstMatch.isActionOnly {
-                                    viewModel.triggerAction(type: firstMatch.type)
-                                } else {
-                                    viewModel.toggleSwitch(item: firstMatch, newValue: !firstMatch.isOn)
-                                }
+            // Search Bar
+            HStack(spacing: 7) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundColor(viewModel.searchText.isEmpty ? Color.gray.opacity(0.8) : Color(red: 0.28, green: 0.76, blue: 0.52))
+                
+                TextField("Search switches...", text: $viewModel.searchText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12.5, weight: .regular))
+                    .foregroundColor(.white)
+                    .onSubmit {
+                        if let firstMatch = viewModel.visibleSwitches.first {
+                            if firstMatch.isActionOnly {
+                                viewModel.triggerAction(type: firstMatch.type)
+                            } else {
+                                viewModel.toggleSwitch(item: firstMatch, newValue: !firstMatch.isOn)
                             }
                         }
-                    
-                    if !viewModel.searchText.isEmpty {
-                        Button(action: {
-                            viewModel.searchText = ""
-                        }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 11.5))
-                                .foregroundColor(Color.gray.opacity(0.8))
-                        }
-                        .buttonStyle(.plain)
-                        .help("Clear search")
-                    } else {
-                        Text("⌘⇧Z")
-                            .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
-                            .foregroundColor(Color.gray.opacity(0.7))
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1.5)
-                            .background(Color.white.opacity(0.06))
-                            .cornerRadius(3)
-                            .help("Global shortcut: Command+Shift+Z")
                     }
-                }
-                .padding(.horizontal, 9)
-                .padding(.vertical, 5.5)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.white.opacity(0.07))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(Color.white.opacity(0.10), lineWidth: 1)
-                        )
-                )
                 
-                // AI Desktop Widgets Studio Button
-                Button(action: {
-                    WidgetStudioService.shared.openStudio()
-                }) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(Color(red: 0.28, green: 0.76, blue: 0.52))
-                        .frame(width: 27, height: 27)
-                        .background(
-                            RoundedRectangle(cornerRadius: 7)
-                                .fill(Color.white.opacity(0.07))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 7)
-                                        .stroke(Color.white.opacity(0.10), lineWidth: 1)
-                                )
-                        )
+                if !viewModel.searchText.isEmpty {
+                    Button(action: {
+                        viewModel.searchText = ""
+                    }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 11.5))
+                            .foregroundColor(Color.gray.opacity(0.8))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Clear search")
+                } else {
+                    Text("⌘⇧Z")
+                        .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                        .foregroundColor(Color.gray.opacity(0.7))
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1.5)
+                        .background(Color.white.opacity(0.06))
+                        .cornerRadius(3)
+                        .help("Global shortcut: Command+Shift+Z")
                 }
-                .buttonStyle(.plain)
-                .help("AI Desktop Widgets — Customize desktop widgets with a single prompt")
             }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5.5)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.white.opacity(0.07))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                    )
+            )
             .padding(.horizontal, 10)
             .padding(.bottom, 6)
             

@@ -40,6 +40,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
     case ultraPowerSave = "ultraPowerSave"
     case textGrabber = "textGrabber"
     case customWidgets = "customWidgets"
+    case habitTracker = "habitTracker"
     
     public var id: String { rawValue }
     
@@ -81,6 +82,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .ultraPowerSave: return "Ultra Power Saver"
         case .textGrabber: return "Live Text (Copy Anywhere)"
         case .customWidgets: return "AI Desktop Widgets"
+        case .habitTracker: return "Habit Tracker"
         }
     }
     
@@ -122,6 +124,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .ultraPowerSave: return "bolt.batteryblock.fill"
         case .textGrabber: return "text.viewfinder"
         case .customWidgets: return "sparkles.rectangle.stack"
+        case .habitTracker: return "calendar.badge.checkmark"
         }
     }
     
@@ -389,6 +392,10 @@ public final class SystemControlService: @unchecked Sendable {
         case .customWidgets:
             let ws = WidgetStudioService.shared
             return (ws.isAnyWidgetActive, ws.statusSubtitle)
+            
+        case .habitTracker:
+            let ht = HabitTrackerService.shared
+            return (ht.isEnabled, ht.statusSubtitle)
         }
     }
     
@@ -596,6 +603,11 @@ public final class SystemControlService: @unchecked Sendable {
         case .customWidgets:
             DispatchQueue.main.async {
                 WidgetStudioService.shared.toggleAllWidgets(isOn)
+            }
+            
+        case .habitTracker:
+            DispatchQueue.main.async {
+                HabitTrackerService.shared.setEnabled(isOn)
             }
         }
     }

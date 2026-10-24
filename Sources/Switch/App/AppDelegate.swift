@@ -55,10 +55,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
         _ = WallpaperChangerService.shared
         _ = WisprFlowService.shared
         _ = DockDoorService.shared
-        _ = MouseBoostProService.shared
         _ = UltraPowerSaveService.shared
         _ = TextGrabberService.shared
-        _ = WidgetStudioService.shared
+        _ = HabitTrackerService.shared
         _ = GlobalHotkeyService.shared
         GlobalHotkeyService.shared.registerGlobalHotkey()
         

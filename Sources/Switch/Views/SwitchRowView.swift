@@ -2513,119 +2513,56 @@ public struct SwitchRowView: View {
                             }
                         }
                     }
-                } else if item.type == .mouseBoostPro {
-                    let mb = MouseBoostProService.shared
-                    HStack(spacing: 4) {
+                } else if item.type == .habitTracker {
+                    let ht = HabitTrackerService.shared
+                    HStack(spacing: 5) {
+                        Button(action: {
+                            ht.showWindow()
+                        }) {
+                            Image(systemName: "calendar.badge.checkmark")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(Color(red: 0.16, green: 0.82, blue: 0.54))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Open Habit Tracker Dashboard")
+                        
                         Menu {
-                            Section("Scroll Wheel Speed (Turbo)") {
-                                ForEach(MouseBoostScrollSpeed.allCases) { speed in
-                                    Button(action: {
-                                        mb.setScrollSpeed(speed)
-                                    }) {
-                                        HStack {
-                                            Text(speed.label)
-                                            if mb.scrollSpeed == speed {
-                                                Image(systemName: "checkmark")
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            
-                            Section("Middle Click (Wheel) Action") {
-                                ForEach(MouseBoostMiddleClickAction.allCases) { act in
-                                    Button(action: {
-                                        mb.setMiddleClickAction(act)
-                                    }) {
-                                        HStack {
-                                            Text(act.label)
-                                            if mb.middleClickAction == act {
-                                                Image(systemName: "checkmark")
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            
-                            Section("Side Button 4 (Back)") {
-                                ForEach(MouseBoostSideButtonAction.allCases) { act in
-                                    Button(action: {
-                                        mb.setButton4Action(act)
-                                    }) {
-                                        HStack {
-                                            Text(act.label)
-                                            if mb.button4Action == act {
-                                                Image(systemName: "checkmark")
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            
-                            Section("Side Button 5 (Forward)") {
-                                ForEach(MouseBoostSideButtonAction.allCases) { act in
-                                    Button(action: {
-                                        mb.setButton5Action(act)
-                                    }) {
-                                        HStack {
-                                            Text(act.label)
-                                            if mb.button5Action == act {
-                                                Image(systemName: "checkmark")
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            
-
-                            Section("Mouse Features") {
-                                Button(action: {
-                                    mb.setInvertScrollWheel(!mb.invertScrollWheel)
-                                }) {
-                                    HStack {
-                                        Text("Invert Mouse Wheel Direction")
-                                        if mb.invertScrollWheel {
-                                            Image(systemName: "checkmark")
-                                        }
-                                    }
-                                }
-                                
-                                Button(action: {
-                                    mb.setSoundFeedback(!mb.soundFeedback)
-                                }) {
-                                    HStack {
-                                        Text("Sound Feedback")
-                                        if mb.soundFeedback {
-                                            Image(systemName: "checkmark")
-                                        }
-                                    }
+                            Button(action: {
+                                ht.showWindow()
+                            }) {
+                                HStack {
+                                    Text("Open Habit Tracker Dashboard...")
+                                    Image(systemName: "macwindow.on.rectangle")
                                 }
                             }
                             
                             Divider()
                             
-                            Button(action: {
-                                mb.showSuperHUD()
-                            }) {
-                                HStack {
-                                    Text("Open MouseBoost Pro Super HUD")
-                                    Image(systemName: "cursorarrow.rays")
-                                }
-                            }
-                            
-                            Button(action: {
-                                mb.checkAccessibilityPermission(prompt: true)
-                            }) {
-                                HStack {
-                                    Text("Check Accessibility Permission")
-                                    Image(systemName: "hand.raised.fill")
+                            Section("Today's Quick Check-off") {
+                                if ht.habits.isEmpty {
+                                    Text("No habits configured yet")
+                                } else {
+                                    let todayStr = Habit.dateFormatter.string(from: Date())
+                                    ForEach(ht.habits) { habit in
+                                        let isDone = habit.isCompleted(dateStr: todayStr)
+                                        Button(action: {
+                                            ht.toggleCompletion(habitId: habit.id, dateStr: todayStr)
+                                        }) {
+                                            HStack {
+                                                Text("\(habit.icon) \(habit.name)")
+                                                if isDone {
+                                                    Image(systemName: "checkmark")
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         } label: {
                             HStack(spacing: 3) {
-                                Text(item.subtitle ?? (item.isOn ? "\(mb.scrollSpeed.shortLabel) Scroll · \(mb.middleClickAction == .superMenu ? "Super HUD" : "Active")" : "Mouse Steroids"))
+                                Text(item.subtitle ?? ht.statusSubtitle)
                                     .font(.system(size: 12, weight: item.isOn ? .bold : .medium, design: .rounded))
-                                    .foregroundColor(item.isOn ? Color(red: 0.98, green: 0.65, blue: 0.25) : Color.gray.opacity(0.85))
+                                    .foregroundColor(item.isOn ? Color(red: 0.16, green: 0.82, blue: 0.54) : Color.gray.opacity(0.85))
                                 Image(systemName: "chevron.down")
                                     .font(.system(size: 8))
                                     .foregroundColor(Color.gray.opacity(0.6))
@@ -2636,33 +2573,11 @@ public struct SwitchRowView: View {
                     }
                     .contextMenu {
                         Button(action: {
-                            mb.showSuperHUD()
+                            ht.showWindow()
                         }) {
                             HStack {
-                                Text("Open MouseBoost Pro Super HUD")
-                                Image(systemName: "cursorarrow.rays")
-                            }
-                        }
-                        
-                        Divider()
-                        
-                        Button(action: {
-                            mb.setEnabled(!mb.isEnabled)
-                        }) {
-                            HStack {
-                                Text(mb.isEnabled ? "Disable MouseBoost Pro" : "Enable MouseBoost Pro")
-                                Image(systemName: "power")
-                            }
-                        }
-                        
-                        Divider()
-                        
-                        Button(action: {
-                            mb.checkAccessibilityPermission(prompt: true)
-                        }) {
-                            HStack {
-                                Text("Check Accessibility Permission...")
-                                Image(systemName: "lock.shield")
+                                Text("Open Habit Tracker Dashboard...")
+                                Image(systemName: "calendar.badge.checkmark")
                             }
                         }
                     }
@@ -2872,59 +2787,6 @@ public struct SwitchRowView: View {
                             HStack {
                                 Text("Copy Text from Full Screen")
                                 Image(systemName: "display")
-                            }
-                        }
-                    }
-                } else if item.type == .customWidgets {
-                    let ws = WidgetStudioService.shared
-                    Menu {
-                        Button(action: {
-                            ws.openStudio()
-                        }) {
-                            HStack {
-                                Text("Open AI Widget Studio...")
-                                Image(systemName: "sparkles")
-                            }
-                        }
-                        
-                        Divider()
-                        
-                        Button(action: {
-                            ws.toggleAllWidgets(true)
-                        }) {
-                            HStack {
-                                Text("Show All Widgets")
-                                Image(systemName: "eye.fill")
-                            }
-                        }
-                        
-                        Button(action: {
-                            ws.toggleAllWidgets(false)
-                        }) {
-                            HStack {
-                                Text("Hide All Widgets")
-                                Image(systemName: "eye.slash.fill")
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 3) {
-                            Text(item.subtitle ?? ws.statusSubtitle)
-                                .font(.system(size: 12, weight: item.isOn ? .bold : .medium, design: .rounded))
-                                .foregroundColor(item.isOn ? Color(red: 0.28, green: 0.76, blue: 0.52) : Color.gray.opacity(0.85))
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 8))
-                                .foregroundColor(Color.gray.opacity(0.6))
-                        }
-                    }
-                    .menuStyle(.borderlessButton)
-                    .fixedSize()
-                    .contextMenu {
-                        Button(action: {
-                            ws.openStudio()
-                        }) {
-                            HStack {
-                                Text("Open AI Widget Studio...")
-                                Image(systemName: "sparkles")
                             }
                         }
                     }
