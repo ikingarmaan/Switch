@@ -239,7 +239,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self = self, let button = self.statusItem?.button else { return }
-                self.showPopover(button)
+                if self.popover.isShown {
+                    self.popover.performClose(nil)
+                } else {
+                    self.showPopover(button)
+                }
+                StickyNotesService.shared.openAndBringNotesToFront(makeKey: false)
             }
         }
         

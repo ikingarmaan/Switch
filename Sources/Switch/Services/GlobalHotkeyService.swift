@@ -8,7 +8,7 @@ public final class GlobalHotkeyService: @unchecked Sendable {
     private var hotKeyRef: EventHotKeyRef?
     private var eventHandlerRef: EventHandlerRef?
     
-    // Default hotkey: ⌘⇧S (Command + Shift + S)
+    // Default hotkey: ⌘⇧Z (Command + Shift + Z)
     private let signature: OSType = OSType(1936028787) // 'SWCH'
     private let hotKeyID: UInt32 = 1
     
@@ -57,10 +57,10 @@ public final class GlobalHotkeyService: @unchecked Sendable {
             return
         }
         
-        // Register ⌘⇧S: kVK_ANSI_S (0x01), cmdKey | shiftKey
+        // Register ⌘⇧Z: kVK_ANSI_Z (0x06), cmdKey | shiftKey
         let hotKeyIdentifier = EventHotKeyID(signature: signature, id: hotKeyID)
         let regStatus = RegisterEventHotKey(
-            UInt32(kVK_ANSI_S),
+            UInt32(kVK_ANSI_Z),
             UInt32(cmdKey | shiftKey),
             hotKeyIdentifier,
             GetApplicationEventTarget(),
@@ -69,7 +69,7 @@ public final class GlobalHotkeyService: @unchecked Sendable {
         )
         
         if regStatus == noErr {
-            NSLog("[GlobalHotkeyService] Successfully registered global hotkey ⌘⇧S (Command+Shift+S)")
+            NSLog("[GlobalHotkeyService] Successfully registered global hotkey ⌘⇧Z (Command+Shift+Z)")
         } else {
             NSLog("[GlobalHotkeyService] Failed to register global hotkey: %d", regStatus)
         }

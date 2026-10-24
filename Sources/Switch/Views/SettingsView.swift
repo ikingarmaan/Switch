@@ -223,7 +223,7 @@ public struct SettingsView: View {
                         
                         Spacer()
                         
-                        Text("⌘⇧S")
+                        Text("⌘⇧Z")
                             .font(.system(size: 12, weight: .bold, design: .monospaced))
                             .foregroundColor(.white)
                             .padding(.horizontal, 8)

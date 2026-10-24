@@ -50,14 +50,14 @@ public struct SwitchListView: View {
                         .buttonStyle(.plain)
                         .help("Clear search")
                     } else {
-                        Text("⌘⇧S")
+                        Text("⌘⇧Z")
                             .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
                             .foregroundColor(Color.gray.opacity(0.7))
                             .padding(.horizontal, 4)
                             .padding(.vertical, 1.5)
                             .background(Color.white.opacity(0.06))
                             .cornerRadius(3)
-                            .help("Global shortcut: Command+Shift+S")
+                            .help("Global shortcut: Command+Shift+Z")
                     }
                 }
                 .padding(.horizontal, 9)

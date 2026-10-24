@@ -731,6 +731,29 @@ public final class StickyNotesService: ObservableObject, @unchecked Sendable {
         }
     }
     
+    /// Opens and ensures sticky notes are shown and brought to front.
+    /// If none are currently open, reopens closed notes or creates a fresh one.
+    public func openAndBringNotesToFront(makeKey: Bool = false) {
+        if !isVisible {
+            setVisibility(true)
+        }
+        
+        if activeNotes.isEmpty {
+            if !closedNotes.isEmpty {
+                reopenAllNotes()
+            } else {
+                _ = createNote()
+            }
+        } else {
+            presentAllNotes()
+            bringAllToFront()
+        }
+        
+        if makeKey, let firstActive = activeNotes.first, let panel = noteWindows[firstActive.id] {
+            panel.makeKeyAndOrderFront(nil)
+        }
+    }
+    
     // MARK: - Window Management
     
     public func presentAllNotes() {
