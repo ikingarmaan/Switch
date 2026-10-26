@@ -57,7 +57,6 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
         _ = DockDoorService.shared
         _ = UltraPowerSaveService.shared
         _ = TextGrabberService.shared
-        _ = HabitTrackerService.shared
         _ = GlobalHotkeyService.shared
         GlobalHotkeyService.shared.registerGlobalHotkey()
         

@@ -66,7 +66,6 @@ public final class SwitchListViewModel: ObservableObject {
         case .ultraPowerSave: return ["battery saver", "eco", "low power", "throttle", "save battery"]
         case .textGrabber: return ["ocr", "copy text", "extract text", "image text", "video text"]
         case .customWidgets: return ["widget", "desktop", "clock", "crypto", "pomodoro", "notes", "todo", "weather", "ai", "prompt", "studio"]
-        case .habitTracker: return ["habit", "habits", "tracker", "routine", "goals", "streak", "calendar", "week", "month", "daily"]
         default: return []
         }
     }
@@ -666,31 +665,6 @@ public final class SwitchListViewModel: ObservableObject {
             }
             .store(in: &cancellables)
             
-        NotificationCenter.default.publisher(for: .habitTrackerStateDidChange)
-            .receive(on: RunLoop.main)
-            .sink { [weak self] notif in
-                guard let self = self,
-                      let index = self.switches.firstIndex(where: { $0.type == .habitTracker })
-                else { return }
-                let ht = HabitTrackerService.shared
-                let isEnabled = notif.object as? Bool ?? ht.isEnabled
-                self.switches[index].isOn = isEnabled
-                self.switches[index].isLoading = false
-                self.switches[index].subtitle = ht.statusSubtitle
-            }
-            .store(in: &cancellables)
-            
-        NotificationCenter.default.publisher(for: .habitTrackerDataDidChange)
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                guard let self = self,
-                      let index = self.switches.firstIndex(where: { $0.type == .habitTracker })
-                else { return }
-                let ht = HabitTrackerService.shared
-                self.switches[index].subtitle = ht.statusSubtitle
-            }
-            .store(in: &cancellables)
-            
         // Lifecycle optimizations: only run periodic refresh when Switch UI is visible
         NotificationCenter.default.publisher(for: .switchPopoverDidOpen)
             .receive(on: RunLoop.main)
@@ -741,7 +715,6 @@ public final class SwitchListViewModel: ObservableObject {
             .autoWallpaper,
             .wisprFlow,
             .dockDoor,
-            .habitTracker,
             .ultraPowerSave,
             .textGrabber
         ]

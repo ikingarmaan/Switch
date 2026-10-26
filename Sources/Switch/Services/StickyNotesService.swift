@@ -527,10 +527,20 @@ public final class StickyNotesService: ObservableObject, @unchecked Sendable {
         NotificationCenter.default.post(name: .stickyNotesCountDidChange, object: activeNotes.count)
     }
     
-    // CRITICAL USER REQUIREMENT: Never delete any sticky note, even if delete was requested.
-    // Close / archive from screen instead, keeping 100% of the content and history intact.
+    // Closing a note hides it from the screen but preserves 100% of its content and history
     public func deleteNote(id: UUID) {
         closeNote(id: id)
+    }
+    
+    // Dedicated explicit permanent deletion (triggered ONLY by the separate Delete button)
+    public func deleteNotePermanently(id: UUID) {
+        if let panel = noteWindows[id] {
+            panel.orderOut(nil)
+            noteWindows.removeValue(forKey: id)
+        }
+        notes.removeAll(where: { $0.id == id })
+        saveNotesImmediate()
+        NotificationCenter.default.post(name: .stickyNotesCountDidChange, object: activeNotes.count)
     }
     
     public func deleteAllNotes() {

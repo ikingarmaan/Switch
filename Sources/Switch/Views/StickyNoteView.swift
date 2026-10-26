@@ -5,6 +5,8 @@ import AppKit
 public final class StickyNoteViewState: ObservableObject {
     @Published public var isCopiedFeedback: Bool = false
     @Published public var isHoveringDelete: Bool = false
+    @Published public var isHoveringTrash: Bool = false
+    @Published public var showDeleteConfirmation: Bool = false
     @Published public var isHoveringCollapse: Bool = false
     @Published public var isHoveringPin: Bool = false
     @Published public var isHoveringAdd: Bool = false
@@ -145,11 +147,76 @@ public struct StickyNoteView: View {
                         footerBar(note: note)
                     }
                 }
+                
+                // Separate Delete Confirmation Overlay
+                if viewState.showDeleteConfirmation {
+                    deleteConfirmationOverlay(note: note)
+                }
             }
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             EmptyView()
+        }
+    }
+    
+    // MARK: - Delete Confirmation Overlay
+    private func deleteConfirmationOverlay(note: StickyNote) -> some View {
+        ZStack {
+            Color.black.opacity(0.65)
+                .edgesIgnoringSafeArea(.all)
+            
+            VStack(spacing: 9) {
+                Image(systemName: "trash.circle.fill")
+                    .font(.system(size: 26))
+                    .foregroundColor(Color.red)
+                
+                Text("Delete Note?")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                
+                Text("Are you sure? This note will be permanently removed.")
+                    .font(.system(size: 10.5))
+                    .foregroundColor(Color.white.opacity(0.85))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 8)
+                
+                HStack(spacing: 10) {
+                    Button(action: {
+                        viewState.showDeleteConfirmation = false
+                    }) {
+                        Text("Cancel")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 5)
+                            .background(RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(0.2)))
+                    }
+                    .buttonStyle(.plain)
+                    
+                    Button(action: {
+                        viewState.showDeleteConfirmation = false
+                        service.deleteNotePermanently(id: note.id)
+                    }) {
+                        Text("Delete")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 5)
+                            .background(RoundedRectangle(cornerRadius: 6).fill(Color.red.opacity(0.9)))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.top, 3)
+            }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color(red: 0.14, green: 0.14, blue: 0.16))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.15), lineWidth: 1))
+                    .shadow(color: Color.black.opacity(0.5), radius: 10)
+            )
+            .padding(16)
         }
     }
     
@@ -177,6 +244,24 @@ public struct StickyNoteView: View {
                 .buttonStyle(.plain)
                 .help("Close Note (Saved safely in History • Never deleted)")
                 .onHover { viewState.isHoveringDelete = $0 }
+                
+                // Separate Delete Button (Permanently deletes this specific note)
+                Button(action: {
+                    viewState.showDeleteConfirmation = true
+                }) {
+                    ZStack {
+                        Circle()
+                            .fill(viewState.isHoveringTrash ? Color.red.opacity(0.85) : note.color.headerButtonBg)
+                            .frame(width: 18, height: 18)
+                        
+                        Image(systemName: "trash")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundColor(viewState.isHoveringTrash ? .white : note.color.textColor.opacity(0.7))
+                    }
+                }
+                .buttonStyle(.plain)
+                .help("Delete Note Permanently")
+                .onHover { viewState.isHoveringTrash = $0 }
                 
                 // Collapse / Expand
                 Button(action: {
