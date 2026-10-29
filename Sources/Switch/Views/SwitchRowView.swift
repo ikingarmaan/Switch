@@ -2521,8 +2521,17 @@ public struct SwitchRowView: View {
                                 ff.toggle()
                             }) {
                                 HStack {
-                                    Text(ff.isEnabled ? "Restore Normal Finder Windows" : "Float Finder on Top (Always on Top)")
-                                    Image(systemName: ff.isEnabled ? "arrow.down.forward.and.arrow.up.backward" : "square.2.layers.3d.top.filled")
+                                    Text(ff.isEnabled ? "Hide Floating Finder Window" : "Show Floating Finder (Always on Top)")
+                                    Image(systemName: ff.isEnabled ? "eye.slash" : "square.2.layers.3d.top.filled")
+                                }
+                            }
+                            
+                            Button(action: {
+                                FloatingFinderViewModel.shared.syncWithNativeFinder()
+                            }) {
+                                HStack {
+                                    Text("Sync with Native Finder Folder")
+                                    Image(systemName: "arrow.triangle.2.circlepath")
                                 }
                             }
                             
@@ -2576,7 +2585,7 @@ public struct SwitchRowView: View {
                                 ff.openNewFinderWindow()
                             }) {
                                 HStack {
-                                    Text("Open New Finder Window")
+                                    Text("Open New Native Finder Window")
                                     Image(systemName: "folder.badge.plus")
                                 }
                             }

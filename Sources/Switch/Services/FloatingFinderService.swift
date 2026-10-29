@@ -1,6 +1,7 @@
 import Foundation
 import Cocoa
 import Combine
+import SwiftUI
 
 public extension Notification.Name {
     static let floatingFinderStateDidChange = Notification.Name("SwitchFloatingFinderStateDidChange")
@@ -25,9 +26,43 @@ public enum FloatingFinderLevel: Int32, CaseIterable, Identifiable, Sendable {
         case .topmost: return "Topmost"
         }
     }
+    
+    public var windowLevel: NSWindow.Level {
+        switch self {
+        case .floating: return .floating
+        case .topmost: return .modalPanel
+        }
+    }
 }
 
-public final class FloatingFinderService: ObservableObject, @unchecked Sendable {
+// MARK: - Dedicated Floating Panel Subclass
+
+public final class FloatingFinderPanel: NSPanel, NSWindowDelegate {
+    public override var canBecomeKey: Bool { true }
+    public override var canBecomeMain: Bool { true }
+    public override var acceptsFirstResponder: Bool { true }
+    
+    public override func performClose(_ sender: Any?) {
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                FloatingFinderService.shared.setEnabled(false)
+            }
+        }
+    }
+    
+    public func windowShouldClose(_ sender: NSWindow) -> Bool {
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                FloatingFinderService.shared.setEnabled(false)
+            }
+        }
+        return false // service handles orderOut
+    }
+}
+
+// MARK: - Floating Finder Service
+
+public final class FloatingFinderService: NSObject, ObservableObject, @unchecked Sendable {
     public static let shared = FloatingFinderService()
     
     @Published public private(set) var isEnabled: Bool = false
@@ -38,10 +73,11 @@ public final class FloatingFinderService: ObservableObject, @unchecked Sendable 
     private let keyLevel = "switch.floatingFinder.level"
     private let keyOpacity = "switch.floatingFinder.opacity"
     
+    private var floatingPanel: FloatingFinderPanel?
     private var monitorTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
     
-    // SkyLight Dynamic Linking
+    // SkyLight Dynamic Linking (Secondary/native fallback)
     private typealias CGSConnectionID = Int32
     private typealias CGSWindowID = UInt32
     private typealias CGSDefaultConnFunc = @convention(c) () -> CGSConnectionID
@@ -77,7 +113,8 @@ public final class FloatingFinderService: ObservableObject, @unchecked Sendable 
         return unsafeBitCast(sym, to: SLSSetWindowAlphaFunc.self)
     }()
     
-    private init() {
+    private override init() {
+        super.init()
         self.isEnabled = UserDefaults.standard.bool(forKey: keyEnabled)
         if let rawLevel = UserDefaults.standard.object(forKey: keyLevel) as? Int32,
            let lvl = FloatingFinderLevel(rawValue: rawLevel) {
@@ -89,9 +126,11 @@ public final class FloatingFinderService: ObservableObject, @unchecked Sendable 
         }
         
         if isEnabled {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-                self?.startMonitoring()
-                self?.applyFloatingState()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                MainActor.assumeIsolated {
+                    FloatingFinderService.shared.showPanel()
+                    FloatingFinderService.shared.startMonitoring()
+                }
             }
         }
     }
@@ -108,14 +147,37 @@ public final class FloatingFinderService: ObservableObject, @unchecked Sendable 
     // MARK: - Toggle & Configuration
     
     public func setEnabled(_ enable: Bool) {
-        guard isEnabled != enable else { return }
+        if Thread.isMainThread {
+            MainActor.assumeIsolated {
+                self.applyEnabled(enable)
+            }
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated {
+                    self?.applyEnabled(enable)
+                }
+            }
+        }
+    }
+    
+    @MainActor
+    private func applyEnabled(_ enable: Bool) {
+        guard isEnabled != enable else {
+            if enable && floatingPanel?.isVisible != true {
+                showPanel()
+            }
+            return
+        }
+        
         isEnabled = enable
         UserDefaults.standard.set(enable, forKey: keyEnabled)
         
         if enable {
+            showPanel()
             startMonitoring()
             applyFloatingState()
         } else {
+            hidePanel()
             stopMonitoring()
             restoreNormalState()
         }
@@ -130,29 +192,104 @@ public final class FloatingFinderService: ObservableObject, @unchecked Sendable 
     public func setLevel(_ level: FloatingFinderLevel) {
         currentLevel = level
         UserDefaults.standard.set(level.rawValue, forKey: keyLevel)
-        if isEnabled {
-            applyFloatingState()
+        
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            if let panel = self.floatingPanel {
+                panel.level = level.windowLevel
+            }
+            if self.isEnabled {
+                self.applyFloatingState()
+            }
+            NotificationCenter.default.post(name: .floatingFinderStateDidChange, object: self.isEnabled)
         }
-        NotificationCenter.default.post(name: .floatingFinderStateDidChange, object: isEnabled)
     }
     
     public func setOpacity(_ newOpacity: Double) {
-        opacity = min(1.0, max(0.5, newOpacity))
-        UserDefaults.standard.set(opacity, forKey: keyOpacity)
-        if isEnabled {
-            applyFloatingState()
+        let clamped = min(1.0, max(0.5, newOpacity))
+        opacity = clamped
+        UserDefaults.standard.set(clamped, forKey: keyOpacity)
+        
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            if let panel = self.floatingPanel {
+                panel.alphaValue = CGFloat(clamped)
+            }
+            if self.isEnabled {
+                self.applyFloatingState()
+            }
+            NotificationCenter.default.post(name: .floatingFinderStateDidChange, object: self.isEnabled)
         }
-        NotificationCenter.default.post(name: .floatingFinderStateDidChange, object: isEnabled)
     }
     
     public func openNewFinderWindow() {
         NSWorkspace.shared.open(URL(fileURLWithPath: NSHomeDirectory()))
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            self?.applyFloatingState()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            MainActor.assumeIsolated {
+                FloatingFinderViewModel.shared.syncWithNativeFinder()
+                FloatingFinderService.shared.applyFloatingState()
+            }
         }
     }
     
-    // MARK: - Window Management & SkyLight Injection
+    // MARK: - Floating Panel Presentation
+    
+    @MainActor
+    public func showPanel() {
+        if let panel = floatingPanel {
+            panel.level = currentLevel.windowLevel
+            panel.alphaValue = CGFloat(opacity)
+            panel.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: false)
+            return
+        }
+        
+        let screenRect = NSScreen.main?.visibleFrame ?? NSRect(x: 100, y: 100, width: 1200, height: 800)
+        let initialWidth: CGFloat = 460
+        let initialHeight: CGFloat = 520
+        let initialOrigin = NSPoint(
+            x: screenRect.maxX - initialWidth - 30,
+            y: screenRect.maxY - initialHeight - 40
+        )
+        
+        let panel = FloatingFinderPanel(
+            contentRect: NSRect(origin: initialOrigin, size: NSSize(width: initialWidth, height: initialHeight)),
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        
+        panel.delegate = panel
+        panel.title = "Floating Finder"
+        panel.titleVisibility = .hidden
+        panel.titlebarAppearsTransparent = true
+        panel.isMovableByWindowBackground = true
+        panel.hidesOnDeactivate = false
+        panel.level = currentLevel.windowLevel
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = true
+        panel.minSize = NSSize(width: 360, height: 48)
+        panel.alphaValue = CGFloat(opacity)
+        panel.setFrameAutosaveName("SwitchFloatingFinderPanel")
+        
+        let contentView = FloatingFinderView(vm: FloatingFinderViewModel.shared)
+        panel.contentView = NSHostingView(rootView: contentView)
+        
+        self.floatingPanel = panel
+        panel.makeKeyAndOrderFront(nil)
+        
+        // Auto-sync directory with native Finder on first appearance
+        FloatingFinderViewModel.shared.syncWithNativeFinder()
+    }
+    
+    @MainActor
+    public func hidePanel() {
+        floatingPanel?.orderOut(nil)
+    }
+    
+    // MARK: - Native Finder Window Management & SkyLight Support
     
     public func applyFloatingState() {
         guard isEnabled else { return }
@@ -180,7 +317,7 @@ public final class FloatingFinderService: ObservableObject, @unchecked Sendable 
         let targetWindows = getFinderWindowIDs(includeAnyLayer: true)
         
         for wid in targetWindows {
-            _ = setLevel(cid, wid, 0) // Normal window layer
+            _ = setLevel(cid, wid, 0)
             if let alphaFn = alphaFunc {
                 _ = alphaFn(cid, wid, 1.0)
             }
@@ -204,12 +341,11 @@ public final class FloatingFinderService: ObservableObject, @unchecked Sendable 
             }
             let layer = w[kCGWindowLayer as String] as? Int ?? 0
             
-            // Exclude desktop background layer (-2147483603 or similar)
+            // Exclude desktop background layer
             guard layer > -1000 else {
                 continue
             }
             
-            // Check dimensions to ignore menu bar strips and tiny helper items
             if let bounds = w[kCGWindowBounds as String] as? [String: Any],
                let width = bounds["Width"] as? CGFloat,
                let height = bounds["Height"] as? CGFloat {
@@ -228,15 +364,13 @@ public final class FloatingFinderService: ObservableObject, @unchecked Sendable 
     
     // MARK: - Monitoring Lifecycle
     
-    private func startMonitoring() {
+    public func startMonitoring() {
         stopMonitoring()
         
-        // Lightweight polling timer (every 1.2 seconds) to keep any newly opened window on top
-        monitorTimer = Timer.scheduledTimer(withTimeInterval: 1.2, repeats: true) { [weak self] _ in
+        monitorTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
             self?.applyFloatingState()
         }
         
-        // Also re-apply whenever Finder or another app activates
         NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didActivateApplicationNotification)
             .receive(on: RunLoop.main)
             .sink { [weak self] notif in
@@ -248,7 +382,7 @@ public final class FloatingFinderService: ObservableObject, @unchecked Sendable 
             .store(in: &cancellables)
     }
     
-    private func stopMonitoring() {
+    public func stopMonitoring() {
         monitorTimer?.invalidate()
         monitorTimer = nil
         cancellables.removeAll()
