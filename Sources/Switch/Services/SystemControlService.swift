@@ -40,6 +40,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
     case ultraPowerSave = "ultraPowerSave"
     case textGrabber = "textGrabber"
     case customWidgets = "customWidgets"
+    case floatingFinder = "floatingFinder"
     
     public var id: String { rawValue }
     
@@ -81,6 +82,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .ultraPowerSave: return "Ultra Power Saver"
         case .textGrabber: return "Live Text (Copy Anywhere)"
         case .customWidgets: return "AI Desktop Widgets"
+        case .floatingFinder: return "Floating Finder (Always on Top)"
         }
     }
     
@@ -122,6 +124,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .ultraPowerSave: return "bolt.batteryblock.fill"
         case .textGrabber: return "text.viewfinder"
         case .customWidgets: return "sparkles.rectangle.stack"
+        case .floatingFinder: return "square.2.layers.3d.top.filled"
         }
     }
     
@@ -389,6 +392,10 @@ public final class SystemControlService: @unchecked Sendable {
         case .customWidgets:
             let ws = WidgetStudioService.shared
             return (ws.isAnyWidgetActive, ws.statusSubtitle)
+            
+        case .floatingFinder:
+            let ff = FloatingFinderService.shared
+            return (ff.isEnabled, ff.statusSubtitle)
         }
     }
     
@@ -596,6 +603,11 @@ public final class SystemControlService: @unchecked Sendable {
         case .customWidgets:
             DispatchQueue.main.async {
                 WidgetStudioService.shared.toggleAllWidgets(isOn)
+            }
+            
+        case .floatingFinder:
+            DispatchQueue.main.async {
+                FloatingFinderService.shared.setEnabled(isOn)
             }
         }
     }

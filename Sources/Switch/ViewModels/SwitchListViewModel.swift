@@ -66,6 +66,7 @@ public final class SwitchListViewModel: ObservableObject {
         case .ultraPowerSave: return ["battery saver", "eco", "low power", "throttle", "save battery"]
         case .textGrabber: return ["ocr", "copy text", "extract text", "image text", "video text"]
         case .customWidgets: return ["widget", "desktop", "clock", "crypto", "pomodoro", "notes", "todo", "weather", "ai", "prompt", "studio"]
+        case .floatingFinder: return ["finder", "float", "always on top", "afloat", "floaty", "pin", "window", "overlay"]
         default: return []
         }
     }
@@ -665,6 +666,20 @@ public final class SwitchListViewModel: ObservableObject {
             }
             .store(in: &cancellables)
             
+        NotificationCenter.default.publisher(for: .floatingFinderStateDidChange)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] notif in
+                guard let self = self,
+                      let index = self.switches.firstIndex(where: { $0.type == .floatingFinder })
+                else { return }
+                let ff = FloatingFinderService.shared
+                let isEnabled = notif.object as? Bool ?? ff.isEnabled
+                self.switches[index].isOn = isEnabled
+                self.switches[index].isLoading = false
+                self.switches[index].subtitle = ff.statusSubtitle
+            }
+            .store(in: &cancellables)
+            
         // Lifecycle optimizations: only run periodic refresh when Switch UI is visible
         NotificationCenter.default.publisher(for: .switchPopoverDidOpen)
             .receive(on: RunLoop.main)
@@ -715,6 +730,7 @@ public final class SwitchListViewModel: ObservableObject {
             .autoWallpaper,
             .wisprFlow,
             .dockDoor,
+            .floatingFinder,
             .ultraPowerSave,
             .textGrabber
         ]

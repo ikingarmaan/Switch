@@ -2513,6 +2513,96 @@ public struct SwitchRowView: View {
                             }
                         }
                     }
+                } else if item.type == .floatingFinder {
+                    let ff = FloatingFinderService.shared
+                    HStack(spacing: 4) {
+                        Menu {
+                            Button(action: {
+                                ff.toggle()
+                            }) {
+                                HStack {
+                                    Text(ff.isEnabled ? "Restore Normal Finder Windows" : "Float Finder on Top (Always on Top)")
+                                    Image(systemName: ff.isEnabled ? "arrow.down.forward.and.arrow.up.backward" : "square.2.layers.3d.top.filled")
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            Section("Floating Level (Afloat Mode)") {
+                                ForEach(FloatingFinderLevel.allCases) { lvl in
+                                    Button(action: {
+                                        ff.setLevel(lvl)
+                                    }) {
+                                        HStack {
+                                            Text(lvl.label)
+                                            if ff.currentLevel == lvl {
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Section("Window Transparency (Afloat Style)") {
+                                Button(action: { ff.setOpacity(1.0) }) {
+                                    HStack {
+                                        Text("100% Solid")
+                                        if ff.opacity == 1.0 { Image(systemName: "checkmark") }
+                                    }
+                                }
+                                Button(action: { ff.setOpacity(0.9) }) {
+                                    HStack {
+                                        Text("90% Subtle Glass")
+                                        if ff.opacity == 0.9 { Image(systemName: "checkmark") }
+                                    }
+                                }
+                                Button(action: { ff.setOpacity(0.8) }) {
+                                    HStack {
+                                        Text("80% Translucent Glass")
+                                        if ff.opacity == 0.8 { Image(systemName: "checkmark") }
+                                    }
+                                }
+                                Button(action: { ff.setOpacity(0.7) }) {
+                                    HStack {
+                                        Text("70% Ghost View")
+                                        if ff.opacity == 0.7 { Image(systemName: "checkmark") }
+                                    }
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            Button(action: {
+                                ff.openNewFinderWindow()
+                            }) {
+                                HStack {
+                                    Text("Open New Finder Window")
+                                    Image(systemName: "folder.badge.plus")
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 3) {
+                                Text(item.subtitle ?? ff.statusSubtitle)
+                                    .font(.system(size: 12, weight: item.isOn ? .bold : .medium, design: .rounded))
+                                    .foregroundColor(item.isOn ? Color(red: 0.16, green: 0.82, blue: 0.54) : Color.gray.opacity(0.85))
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 8))
+                                    .foregroundColor(Color.gray.opacity(0.6))
+                            }
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                    }
+                    .contextMenu {
+                        Button(action: {
+                            ff.openNewFinderWindow()
+                        }) {
+                            HStack {
+                                Text("Open New Finder Window")
+                                Image(systemName: "folder.badge.plus")
+                            }
+                        }
+                    }
                 } else if item.type == .ultraPowerSave {
                     let ps = UltraPowerSaveService.shared
                     HStack(spacing: 6) {
