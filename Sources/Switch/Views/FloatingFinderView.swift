@@ -49,9 +49,19 @@ public final class FloatingFinderViewModel: ObservableObject {
     @Published public var selectedItemId: String? = nil
     @Published public var statusMessage: String = ""
     @Published public var isSyncing: Bool = false
+    @Published public var isLiveWatchingEnabled: Bool = true
+    @Published public var autoSyncWithFinder: Bool = false
     
     private let keyLastPath = "switch.floatingFinder.lastPath"
     private let keyViewMode = "switch.floatingFinder.isGridView"
+    private let keyLiveWatching = "switch.floatingFinder.liveWatching"
+    private let keyAutoSync = "switch.floatingFinder.autoSync"
+    
+    private var directorySource: DispatchSourceFileSystemObject?
+    private var directoryFileDescriptor: Int32 = -1
+    private var reloadWorkItem: DispatchWorkItem?
+    private var pollTimer: Timer?
+    private var lastFinderPathChecked: String = ""
     
     private lazy var byteFormatter: ByteCountFormatter = {
         let f = ByteCountFormatter()
@@ -78,10 +88,13 @@ public final class FloatingFinderViewModel: ObservableObject {
         }
         
         self.isGridView = UserDefaults.standard.bool(forKey: keyViewMode)
+        self.isLiveWatchingEnabled = UserDefaults.standard.object(forKey: keyLiveWatching) as? Bool ?? true
+        self.autoSyncWithFinder = UserDefaults.standard.bool(forKey: keyAutoSync)
         self.history = [currentURL]
         self.historyIndex = 0
         
         loadCurrentDirectory(addToHistory: false)
+        startWatching()
     }
     
     public var canGoBack: Bool {
@@ -164,6 +177,7 @@ public final class FloatingFinderViewModel: ObservableObject {
             currentURL = url
             UserDefaults.standard.set(url.path, forKey: keyLastPath)
             loadCurrentDirectory(addToHistory: false)
+            startWatching()
         } else {
             openItem(url: url)
         }
@@ -175,6 +189,7 @@ public final class FloatingFinderViewModel: ObservableObject {
         currentURL = history[historyIndex]
         UserDefaults.standard.set(currentURL.path, forKey: keyLastPath)
         loadCurrentDirectory(addToHistory: false)
+        startWatching()
     }
     
     public func goForward() {
@@ -183,6 +198,7 @@ public final class FloatingFinderViewModel: ObservableObject {
         currentURL = history[historyIndex]
         UserDefaults.standard.set(currentURL.path, forKey: keyLastPath)
         loadCurrentDirectory(addToHistory: false)
+        startWatching()
     }
     
     public func goUp() {
@@ -258,11 +274,142 @@ public final class FloatingFinderViewModel: ObservableObject {
                 ))
             }
             
-            self.items = loaded
-            self.selectedItemId = nil
+            loaded.sort(by: { $0.url.path.localizedStandardCompare($1.url.path) == .orderedAscending })
+            if self.items != loaded {
+                self.items = loaded
+            }
+            if let sel = self.selectedItemId, !loaded.contains(where: { $0.id == sel }) {
+                self.selectedItemId = nil
+            }
         } catch {
-            self.items = []
+            if !self.items.isEmpty {
+                self.items = []
+            }
             self.statusMessage = "Cannot open folder: \(error.localizedDescription)"
+        }
+    }
+    
+    // MARK: - Live Directory Monitoring
+    
+    public func setLiveWatchingEnabled(_ enabled: Bool) {
+        isLiveWatchingEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: keyLiveWatching)
+        if enabled {
+            startWatching()
+        } else {
+            stopWatching()
+        }
+    }
+    
+    public func setAutoSyncWithFinder(_ enabled: Bool) {
+        autoSyncWithFinder = enabled
+        UserDefaults.standard.set(enabled, forKey: keyAutoSync)
+        if enabled {
+            checkAndAutoSyncFinder()
+        }
+    }
+    
+    public func startWatching() {
+        stopWatching()
+        guard isLiveWatchingEnabled else { return }
+        
+        let path = currentURL.path
+        let fd = open(path, O_EVTONLY)
+        if fd >= 0 {
+            self.directoryFileDescriptor = fd
+            let source = DispatchSource.makeFileSystemObjectSource(
+                fileDescriptor: fd,
+                eventMask: [.write, .delete, .rename, .extend, .attrib, .link],
+                queue: DispatchQueue.main
+            )
+            
+            source.setEventHandler { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self = self else { return }
+                    if !FileManager.default.fileExists(atPath: self.currentURL.path) {
+                        self.goUp()
+                        return
+                    }
+                    self.scheduleDebouncedReload()
+                }
+            }
+            
+            source.setCancelHandler {
+                close(fd)
+            }
+            
+            source.resume()
+            self.directorySource = source
+        }
+        
+        // Lightweight polling fallback (every 1.0s) for remote / iCloud / virtual drives
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self = self else { return }
+                self.loadCurrentDirectory(addToHistory: false)
+                if self.autoSyncWithFinder {
+                    self.checkAndAutoSyncFinder()
+                }
+            }
+        }
+    }
+    
+    public func stopWatching() {
+        pollTimer?.invalidate()
+        pollTimer = nil
+        
+        reloadWorkItem?.cancel()
+        reloadWorkItem = nil
+        
+        if let source = directorySource {
+            source.cancel()
+            directorySource = nil
+            directoryFileDescriptor = -1
+        } else if directoryFileDescriptor >= 0 {
+            close(directoryFileDescriptor)
+            directoryFileDescriptor = -1
+        }
+    }
+    
+    private func scheduleDebouncedReload() {
+        reloadWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                self?.loadCurrentDirectory(addToHistory: false)
+            }
+        }
+        reloadWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: item)
+    }
+    
+    public func checkAndAutoSyncFinder() {
+        guard !isSyncing else { return }
+        let script = """
+        tell application "Finder"
+            if (count of Finder windows) > 0 then
+                return POSIX path of (target of front Finder window as alias)
+            else
+                return ""
+            end if
+        end tell
+        """
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            var error: NSDictionary?
+            if let appleScript = NSAppleScript(source: script) {
+                let output = appleScript.executeAndReturnError(&error)
+                let path = (output.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if !path.isEmpty && FileManager.default.fileExists(atPath: path) {
+                    DispatchQueue.main.async {
+                        MainActor.assumeIsolated {
+                            guard let self = self else { return }
+                            if path != self.currentURL.path && path != self.lastFinderPathChecked {
+                                self.lastFinderPathChecked = path
+                                self.navigateTo(url: URL(fileURLWithPath: path))
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
     
@@ -540,6 +687,19 @@ private struct FloatingFinderHeaderBar: View {
             .buttonStyle(.plain)
             .help("Sync current folder with active native Finder window")
             
+            // Reload / Refresh Button
+            Button(action: {
+                vm.loadCurrentDirectory(addToHistory: false)
+            }) {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 11, weight: .semibold))
+                    .frame(width: 24, height: 24)
+                    .background(Color.white.opacity(0.08))
+                    .cornerRadius(5)
+            }
+            .buttonStyle(.plain)
+            .help("Refresh directory contents")
+            
             // Native Finder Reveal Button
             Button(action: {
                 vm.openInNativeFinder()
@@ -568,6 +728,25 @@ private struct FloatingFinderHeaderBar: View {
             
             // Opacity & Layer Menu
             Menu {
+                Section("Live Tracking & Sync") {
+                    Button(action: {
+                        vm.setLiveWatchingEnabled(!vm.isLiveWatchingEnabled)
+                    }) {
+                        HStack {
+                            Text("Live Auto-Refresh")
+                            if vm.isLiveWatchingEnabled { Image(systemName: "checkmark") }
+                        }
+                    }
+                    Button(action: {
+                        vm.setAutoSyncWithFinder(!vm.autoSyncWithFinder)
+                    }) {
+                        HStack {
+                            Text("Auto-Follow Native Finder Folder")
+                            if vm.autoSyncWithFinder { Image(systemName: "checkmark") }
+                        }
+                    }
+                }
+                
                 Section("Floating Level") {
                     Button(action: { service.setLevel(.floating) }) {
                         HStack {
@@ -926,7 +1105,7 @@ private struct FloatingFinderFooterBar: View {
                 Circle()
                     .fill(Color(red: 0.16, green: 0.82, blue: 0.54))
                     .frame(width: 7, height: 7)
-                Text("Always on Top (\(service.currentLevel.shortLabel))")
+                Text(vm.isLiveWatchingEnabled ? "Always on Top · Live Auto-Refresh" : "Always on Top (\(service.currentLevel.shortLabel))")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundColor(Color(red: 0.16, green: 0.82, blue: 0.54))
             }

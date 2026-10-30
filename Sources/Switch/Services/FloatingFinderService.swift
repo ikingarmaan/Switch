@@ -42,6 +42,17 @@ public final class FloatingFinderPanel: NSPanel, NSWindowDelegate {
     public override var canBecomeMain: Bool { true }
     public override var acceptsFirstResponder: Bool { true }
     
+    public override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown {
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    FloatingFinderViewModel.shared.loadCurrentDirectory(addToHistory: false)
+                }
+            }
+        }
+        super.sendEvent(event)
+    }
+    
     public override func performClose(_ sender: Any?) {
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
@@ -280,13 +291,15 @@ public final class FloatingFinderService: NSObject, ObservableObject, @unchecked
         self.floatingPanel = panel
         panel.makeKeyAndOrderFront(nil)
         
-        // Auto-sync directory with native Finder on first appearance
+        // Start live directory watching & auto-sync directory with native Finder
+        FloatingFinderViewModel.shared.startWatching()
         FloatingFinderViewModel.shared.syncWithNativeFinder()
     }
     
     @MainActor
     public func hidePanel() {
         floatingPanel?.orderOut(nil)
+        FloatingFinderViewModel.shared.stopWatching()
     }
     
     // MARK: - Native Finder Window Management & SkyLight Support
@@ -377,6 +390,24 @@ public final class FloatingFinderService: NSObject, ObservableObject, @unchecked
                 if let app = notif.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
                    app.bundleIdentifier == "com.apple.finder" {
                     self?.applyFloatingState()
+                    MainActor.assumeIsolated {
+                        FloatingFinderViewModel.shared.loadCurrentDirectory(addToHistory: false)
+                        if FloatingFinderViewModel.shared.autoSyncWithFinder {
+                            FloatingFinderViewModel.shared.checkAndAutoSyncFinder()
+                        }
+                    }
+                }
+            }
+            .store(in: &cancellables)
+            
+        NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didDeactivateApplicationNotification)
+            .receive(on: RunLoop.main)
+            .sink { notif in
+                if let app = notif.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                   app.bundleIdentifier == "com.apple.finder" {
+                    MainActor.assumeIsolated {
+                        FloatingFinderViewModel.shared.loadCurrentDirectory(addToHistory: false)
+                    }
                 }
             }
             .store(in: &cancellables)
