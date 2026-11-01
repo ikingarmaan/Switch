@@ -2526,6 +2526,17 @@ public struct SwitchRowView: View {
                                 }
                             }
                             
+                            if ff.isEnabled {
+                                Button(action: {
+                                    ff.toggleMinimize()
+                                }) {
+                                    HStack {
+                                        Text(ff.isMinimized ? "Expand Floating Finder Window" : "Minimize to Floating Bar")
+                                        Image(systemName: ff.isMinimized ? "arrow.up.left.and.arrow.down.right" : "minus")
+                                    }
+                                }
+                            }
+                            
                             Button(action: {
                                 FloatingFinderViewModel.shared.syncWithNativeFinder()
                             }) {

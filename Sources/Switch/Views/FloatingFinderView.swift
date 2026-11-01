@@ -574,7 +574,7 @@ public struct FloatingFinderView: View {
                 // Header Bar
                 FloatingFinderHeaderBar(vm: vm, service: service)
                 
-                if !vm.isCollapsed {
+                if !service.isMinimized {
                     // Breadcrumb Path Navigation
                     FloatingFinderBreadcrumbBar(vm: vm)
                     
@@ -596,7 +596,11 @@ public struct FloatingFinderView: View {
                 }
             }
         }
-        .frame(minWidth: 380, minHeight: vm.isCollapsed ? 48 : 420)
+        .frame(
+            minWidth: 380,
+            minHeight: service.isMinimized ? 48 : 360,
+            maxHeight: service.isMinimized ? 48 : .infinity
+        )
         .cornerRadius(12)
         .overlay(
             RoundedRectangle(cornerRadius: 12)
@@ -621,22 +625,24 @@ private struct FloatingFinderHeaderBar: View {
                     Circle()
                         .fill(Color(red: 1.0, green: 0.38, blue: 0.35))
                         .frame(width: 12, height: 12)
-                        .overlay(Image(systemName: "xmark").font(.system(size: 7, weight: .bold)).foregroundColor(.black.opacity(0.6)).opacity(0))
                 }
                 .buttonStyle(.plain)
-                .help("Close Floating Finder")
+                .help("Close Floating Finder (⌘W)")
                 
                 Button(action: {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
-                        vm.isCollapsed.toggle()
-                    }
+                    service.toggleMinimize()
                 }) {
-                    Circle()
-                        .fill(Color(red: 1.0, green: 0.74, blue: 0.22))
-                        .frame(width: 12, height: 12)
+                    ZStack {
+                        Circle()
+                            .fill(Color(red: 1.0, green: 0.74, blue: 0.22))
+                            .frame(width: 12, height: 12)
+                        Image(systemName: service.isMinimized ? "plus" : "minus")
+                            .font(.system(size: 7, weight: .bold))
+                            .foregroundColor(.black.opacity(service.isMinimized ? 0.75 : 0.45))
+                    }
                 }
                 .buttonStyle(.plain)
-                .help(vm.isCollapsed ? "Expand Window" : "Collapse to Bar")
+                .help(service.isMinimized ? "Expand Window (⌘M)" : "Minimize Window (⌘M)")
                 
                 Button(action: {
                     service.openNewFinderWindow()
@@ -650,43 +656,45 @@ private struct FloatingFinderHeaderBar: View {
             }
             .padding(.trailing, 4)
             
-            // Back / Forward / Up Controls
-            HStack(spacing: 2) {
-                Button(action: { vm.goBack() }) {
-                    Image(systemName: "chevron.backward")
-                        .font(.system(size: 11, weight: .semibold))
-                        .frame(width: 24, height: 24)
-                        .contentShape(Rectangle())
+            if !service.isMinimized {
+                // Back / Forward / Up Controls
+                HStack(spacing: 2) {
+                    Button(action: { vm.goBack() }) {
+                        Image(systemName: "chevron.backward")
+                            .font(.system(size: 11, weight: .semibold))
+                            .frame(width: 24, height: 24)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!vm.canGoBack)
+                    .opacity(vm.canGoBack ? 1.0 : 0.35)
+                    .help("Back")
+                    
+                    Button(action: { vm.goForward() }) {
+                        Image(systemName: "chevron.forward")
+                            .font(.system(size: 11, weight: .semibold))
+                            .frame(width: 24, height: 24)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!vm.canGoForward)
+                    .opacity(vm.canGoForward ? 1.0 : 0.35)
+                    .help("Forward")
+                    
+                    Button(action: { vm.goUp() }) {
+                        Image(systemName: "chevron.up")
+                            .font(.system(size: 11, weight: .semibold))
+                            .frame(width: 24, height: 24)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!vm.canGoUp)
+                    .opacity(vm.canGoUp ? 1.0 : 0.35)
+                    .help("Enclosing Folder")
                 }
-                .buttonStyle(.plain)
-                .disabled(!vm.canGoBack)
-                .opacity(vm.canGoBack ? 1.0 : 0.35)
-                .help("Back")
-                
-                Button(action: { vm.goForward() }) {
-                    Image(systemName: "chevron.forward")
-                        .font(.system(size: 11, weight: .semibold))
-                        .frame(width: 24, height: 24)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .disabled(!vm.canGoForward)
-                .opacity(vm.canGoForward ? 1.0 : 0.35)
-                .help("Forward")
-                
-                Button(action: { vm.goUp() }) {
-                    Image(systemName: "chevron.up")
-                        .font(.system(size: 11, weight: .semibold))
-                        .frame(width: 24, height: 24)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .disabled(!vm.canGoUp)
-                .opacity(vm.canGoUp ? 1.0 : 0.35)
-                .help("Enclosing Folder")
+                .background(Color.white.opacity(0.06))
+                .cornerRadius(6)
             }
-            .background(Color.white.opacity(0.06))
-            .cornerRadius(6)
             
             // Current Title
             HStack(spacing: 5) {
@@ -696,86 +704,163 @@ private struct FloatingFinderHeaderBar: View {
                 Text(vm.currentURL.lastPathComponent.isEmpty ? "Macintosh HD" : vm.currentURL.lastPathComponent)
                     .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1)
+                
+                if service.isMinimized {
+                    Text("(\(vm.items.count) items)")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
             }
+            .contentShape(Rectangle())
+            .onTapGesture(count: 2) {
+                service.toggleMinimize()
+            }
+            .help(service.isMinimized ? "Double-click to expand (⌘M)" : "Double-click to minimize (⌘M)")
             
             Spacer()
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2) {
+                    service.toggleMinimize()
+                }
             
-            // Quick Jumps (Desktop, Downloads, Home)
-            HStack(spacing: 3) {
-                QuickJumpButton(icon: "house.fill", label: "Home") {
-                    vm.jumpToHome()
-                }
-                QuickJumpButton(icon: "desktopcomputer", label: "Desktop") {
-                    vm.jumpTo(folder: .desktopDirectory)
-                }
-                QuickJumpButton(icon: "arrow.down.circle.fill", label: "Downloads") {
-                    vm.jumpTo(folder: .downloadsDirectory)
-                }
-                QuickJumpButton(icon: "doc.fill", label: "Documents") {
-                    vm.jumpTo(folder: .documentDirectory)
-                }
-            }
-            
-            Divider().frame(height: 16).opacity(0.3)
-            
-            // Sync with Native Finder Button
-            Button(action: {
-                vm.syncWithNativeFinder()
-            }) {
+            if !service.isMinimized {
+                // Quick Jumps (Desktop, Downloads, Home)
                 HStack(spacing: 3) {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.system(size: 10, weight: .bold))
-                        .rotationEffect(.degrees(vm.isSyncing ? 360 : 0))
-                    Text("Sync")
-                        .font(.system(size: 11, weight: .medium))
+                    QuickJumpButton(icon: "house.fill", label: "Home") {
+                        vm.jumpToHome()
+                    }
+                    QuickJumpButton(icon: "desktopcomputer", label: "Desktop") {
+                        vm.jumpTo(folder: .desktopDirectory)
+                    }
+                    QuickJumpButton(icon: "arrow.down.circle.fill", label: "Downloads") {
+                        vm.jumpTo(folder: .downloadsDirectory)
+                    }
+                    QuickJumpButton(icon: "doc.fill", label: "Documents") {
+                        vm.jumpTo(folder: .documentDirectory)
+                    }
                 }
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(Color.accentColor.opacity(0.18))
-                .foregroundColor(.accentColor)
-                .cornerRadius(5)
-            }
-            .buttonStyle(.plain)
-            .help("Sync current folder with active native Finder window")
-            
-            // Reload / Refresh Button
-            Button(action: {
-                vm.loadCurrentDirectory(addToHistory: false)
-            }) {
-                Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 11, weight: .semibold))
-                    .frame(width: 24, height: 24)
-                    .background(Color.white.opacity(0.08))
+                
+                Divider().frame(height: 16).opacity(0.3)
+                
+                // Sync with Native Finder Button
+                Button(action: {
+                    vm.syncWithNativeFinder()
+                }) {
+                    HStack(spacing: 3) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.system(size: 10, weight: .bold))
+                            .rotationEffect(.degrees(vm.isSyncing ? 360 : 0))
+                        Text("Sync")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color.accentColor.opacity(0.18))
+                    .foregroundColor(.accentColor)
                     .cornerRadius(5)
+                }
+                .buttonStyle(.plain)
+                .help("Sync current folder with active native Finder window")
+                
+                // Reload / Refresh Button
+                Button(action: {
+                    vm.loadCurrentDirectory(addToHistory: false)
+                }) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11, weight: .semibold))
+                        .frame(width: 24, height: 24)
+                        .background(Color.white.opacity(0.08))
+                        .cornerRadius(5)
+                }
+                .buttonStyle(.plain)
+                .help("Refresh directory contents")
+                
+                // Native Finder Reveal Button
+                Button(action: {
+                    vm.openInNativeFinder()
+                }) {
+                    Image(systemName: "arrow.up.forward.app")
+                        .font(.system(size: 11, weight: .semibold))
+                        .frame(width: 24, height: 24)
+                        .background(Color.white.opacity(0.08))
+                        .cornerRadius(5)
+                }
+                .buttonStyle(.plain)
+                .help("Open in Native Finder")
+                
+                // View Mode Toggle (List vs Grid)
+                Button(action: {
+                    vm.toggleViewMode()
+                }) {
+                    Image(systemName: vm.isGridView ? "list.bullet" : "square.grid.2x2")
+                        .font(.system(size: 11, weight: .semibold))
+                        .frame(width: 24, height: 24)
+                        .background(Color.white.opacity(0.08))
+                        .cornerRadius(5)
+                }
+                .buttonStyle(.plain)
+                .help(vm.isGridView ? "Switch to List View" : "Switch to Grid View")
+                
+                // Dedicated Minimize Button
+                Button(action: {
+                    service.toggleMinimize()
+                }) {
+                    Image(systemName: "minus")
+                        .font(.system(size: 11, weight: .bold))
+                        .frame(width: 24, height: 24)
+                        .background(Color.white.opacity(0.08))
+                        .cornerRadius(5)
+                }
+                .buttonStyle(.plain)
+                .help("Minimize to Mini Bar (⌘M)")
+            } else {
+                // Minimized Mini-Bar Controls
+                
+                // Reload / Refresh Button
+                Button(action: {
+                    vm.loadCurrentDirectory(addToHistory: false)
+                }) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11, weight: .semibold))
+                        .frame(width: 24, height: 24)
+                        .background(Color.white.opacity(0.08))
+                        .cornerRadius(5)
+                }
+                .buttonStyle(.plain)
+                .help("Refresh directory contents")
+                
+                // Native Finder Reveal Button
+                Button(action: {
+                    vm.openInNativeFinder()
+                }) {
+                    Image(systemName: "arrow.up.forward.app")
+                        .font(.system(size: 11, weight: .semibold))
+                        .frame(width: 24, height: 24)
+                        .background(Color.white.opacity(0.08))
+                        .cornerRadius(5)
+                }
+                .buttonStyle(.plain)
+                .help("Open in Native Finder")
+                
+                // Prominent Expand Button
+                Button(action: {
+                    service.toggleMinimize()
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .font(.system(size: 10, weight: .bold))
+                        Text("Expand")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.accentColor.opacity(0.22))
+                    .foregroundColor(.accentColor)
+                    .cornerRadius(6)
+                }
+                .buttonStyle(.plain)
+                .help("Expand Floating Finder (⌘M)")
             }
-            .buttonStyle(.plain)
-            .help("Refresh directory contents")
-            
-            // Native Finder Reveal Button
-            Button(action: {
-                vm.openInNativeFinder()
-            }) {
-                Image(systemName: "arrow.up.forward.app")
-                    .font(.system(size: 11, weight: .semibold))
-                    .frame(width: 24, height: 24)
-                    .background(Color.white.opacity(0.08))
-                    .cornerRadius(5)
-            }
-            .buttonStyle(.plain)
-            .help("Open in Native Finder")
-            
-            // View Mode Toggle (List vs Grid)
-            Button(action: {
-                vm.toggleViewMode()
-            }) {
-                Image(systemName: vm.isGridView ? "list.bullet" : "square.grid.2x2")
-                    .font(.system(size: 11, weight: .semibold))
-                    .frame(width: 24, height: 24)
-                    .background(Color.white.opacity(0.08))
-                    .cornerRadius(5)
-            }
-            .buttonStyle(.plain)
-            .help(vm.isGridView ? "Switch to List View" : "Switch to Grid View")
             
             // Opacity & Layer Menu
             Menu {

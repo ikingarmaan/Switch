@@ -53,6 +53,36 @@ public final class FloatingFinderPanel: NSPanel, NSWindowDelegate {
         super.sendEvent(event)
     }
     
+    public override func keyDown(with event: NSEvent) {
+        // Command+M toggles minimize / restore
+        if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "m" {
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    FloatingFinderService.shared.toggleMinimize()
+                }
+            }
+            return
+        }
+        // Command+W closes floating finder
+        if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "w" {
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    FloatingFinderService.shared.setEnabled(false)
+                }
+            }
+            return
+        }
+        super.keyDown(with: event)
+    }
+    
+    public override func performMiniaturize(_ sender: Any?) {
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                FloatingFinderService.shared.toggleMinimize()
+            }
+        }
+    }
+    
     public override func performClose(_ sender: Any?) {
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
@@ -69,6 +99,18 @@ public final class FloatingFinderPanel: NSPanel, NSWindowDelegate {
         }
         return false // service handles orderOut
     }
+    
+    public func windowDidResize(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        let currentHeight = window.frame.size.height
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                if !FloatingFinderService.shared.isMinimized && currentHeight > 180 {
+                    FloatingFinderService.shared.updateExpandedHeight(currentHeight)
+                }
+            }
+        }
+    }
 }
 
 // MARK: - Floating Finder Service
@@ -79,10 +121,14 @@ public final class FloatingFinderService: NSObject, ObservableObject, @unchecked
     @Published public private(set) var isEnabled: Bool = false
     @Published public private(set) var currentLevel: FloatingFinderLevel = .floating
     @Published public private(set) var opacity: Double = 1.0
+    @Published public private(set) var isMinimized: Bool = false
+    public private(set) var lastExpandedHeight: CGFloat = 520
     
     private let keyEnabled = "switch.floatingFinder.enabled"
     private let keyLevel = "switch.floatingFinder.level"
     private let keyOpacity = "switch.floatingFinder.opacity"
+    private let keyMinimized = "switch.floatingFinder.isMinimized"
+    private let keyExpandedHeight = "switch.floatingFinder.lastExpandedHeight"
     
     private var floatingPanel: FloatingFinderPanel?
     private var monitorTimer: Timer?
@@ -135,6 +181,11 @@ public final class FloatingFinderService: NSObject, ObservableObject, @unchecked
         if savedOpacity >= 0.5 && savedOpacity <= 1.0 {
             self.opacity = savedOpacity
         }
+        self.isMinimized = UserDefaults.standard.bool(forKey: keyMinimized)
+        let savedHeight = UserDefaults.standard.double(forKey: keyExpandedHeight)
+        if savedHeight >= 260 && savedHeight <= 1600 {
+            self.lastExpandedHeight = CGFloat(savedHeight)
+        }
         
         if isEnabled {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
@@ -148,10 +199,13 @@ public final class FloatingFinderService: NSObject, ObservableObject, @unchecked
     
     public var statusSubtitle: String {
         guard isEnabled else { return "Standard Layer" }
-        if opacity < 1.0 {
-            return "\(currentLevel.shortLabel) · \(Int(opacity * 100))% Opacity"
+        let base = currentLevel.shortLabel
+        if isMinimized {
+            return "\(base) · Minimized"
+        } else if opacity < 1.0 {
+            return "\(base) · \(Int(opacity * 100))% Opacity"
         } else {
-            return "\(currentLevel.shortLabel) on Top"
+            return "\(base) on Top"
         }
     }
     
@@ -243,6 +297,86 @@ public final class FloatingFinderService: NSObject, ObservableObject, @unchecked
         }
     }
     
+    // MARK: - Minimize & Sizing Management
+    
+    public func toggleMinimize() {
+        setMinimized(!isMinimized)
+    }
+    
+    public func setMinimized(_ minimize: Bool) {
+        if Thread.isMainThread {
+            MainActor.assumeIsolated {
+                self.applyMinimized(minimize)
+            }
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated {
+                    self?.applyMinimized(minimize)
+                }
+            }
+        }
+    }
+    
+    @MainActor
+    private func applyMinimized(_ minimize: Bool) {
+        guard let panel = floatingPanel else {
+            isMinimized = minimize
+            UserDefaults.standard.set(minimize, forKey: keyMinimized)
+            FloatingFinderViewModel.shared.isCollapsed = minimize
+            return
+        }
+        
+        guard isMinimized != minimize else { return }
+        
+        isMinimized = minimize
+        UserDefaults.standard.set(minimize, forKey: keyMinimized)
+        FloatingFinderViewModel.shared.isCollapsed = minimize
+        
+        let headerHeight: CGFloat = 48
+        var currentFrame = panel.frame
+        
+        if minimize {
+            if currentFrame.size.height > 120 {
+                lastExpandedHeight = currentFrame.size.height
+                UserDefaults.standard.set(Double(lastExpandedHeight), forKey: keyExpandedHeight)
+            }
+            
+            panel.minSize = NSSize(width: 360, height: headerHeight)
+            panel.maxSize = NSSize(width: 10000, height: headerHeight)
+            
+            currentFrame.origin.y += (currentFrame.size.height - headerHeight)
+            currentFrame.size.height = headerHeight
+        } else {
+            let targetH = max(lastExpandedHeight, 380)
+            
+            panel.minSize = NSSize(width: 360, height: 260)
+            panel.maxSize = NSSize(width: 10000, height: 10000)
+            
+            currentFrame.origin.y -= (targetH - currentFrame.size.height)
+            currentFrame.size.height = targetH
+            
+            if let screen = panel.screen ?? NSScreen.main {
+                let screenFrame = screen.visibleFrame
+                if currentFrame.origin.y < screenFrame.minY {
+                    currentFrame.origin.y = screenFrame.minY
+                }
+                if currentFrame.maxY > screenFrame.maxY {
+                    currentFrame.origin.y = screenFrame.maxY - currentFrame.size.height
+                }
+            }
+        }
+        
+        panel.setFrame(currentFrame, display: true, animate: true)
+        NotificationCenter.default.post(name: .floatingFinderStateDidChange, object: isEnabled)
+    }
+    
+    public func updateExpandedHeight(_ h: CGFloat) {
+        if !isMinimized && h > 180 {
+            lastExpandedHeight = h
+            UserDefaults.standard.set(Double(h), forKey: keyExpandedHeight)
+        }
+    }
+    
     // MARK: - Floating Panel Presentation
     
     @MainActor
@@ -257,14 +391,15 @@ public final class FloatingFinderService: NSObject, ObservableObject, @unchecked
         
         let screenRect = NSScreen.main?.visibleFrame ?? NSRect(x: 100, y: 100, width: 1200, height: 800)
         let initialWidth: CGFloat = 460
-        let initialHeight: CGFloat = 520
+        let headerHeight: CGFloat = 48
+        let targetHeight: CGFloat = isMinimized ? headerHeight : max(lastExpandedHeight, 420)
         let initialOrigin = NSPoint(
             x: screenRect.maxX - initialWidth - 30,
-            y: screenRect.maxY - initialHeight - 40
+            y: screenRect.maxY - targetHeight - 40
         )
         
         let panel = FloatingFinderPanel(
-            contentRect: NSRect(origin: initialOrigin, size: NSSize(width: initialWidth, height: initialHeight)),
+            contentRect: NSRect(origin: initialOrigin, size: NSSize(width: initialWidth, height: targetHeight)),
             styleMask: [.titled, .closable, .resizable, .fullSizeContentView, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -281,9 +416,25 @@ public final class FloatingFinderService: NSObject, ObservableObject, @unchecked
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = true
-        panel.minSize = NSSize(width: 360, height: 48)
+        panel.minSize = NSSize(width: 360, height: isMinimized ? headerHeight : 260)
+        panel.maxSize = NSSize(width: 10000, height: isMinimized ? headerHeight : 10000)
         panel.alphaValue = CGFloat(opacity)
         panel.setFrameAutosaveName("SwitchFloatingFinderPanel")
+        
+        // Adjust frame if Autosave gave a height conflicting with isMinimized
+        var currentF = panel.frame
+        if isMinimized && currentF.size.height != headerHeight {
+            currentF.origin.y += (currentF.size.height - headerHeight)
+            currentF.size.height = headerHeight
+            panel.setFrame(currentF, display: false)
+        } else if !isMinimized && currentF.size.height <= headerHeight + 20 {
+            let restoreH = max(lastExpandedHeight, 420)
+            currentF.origin.y -= (restoreH - currentF.size.height)
+            currentF.size.height = restoreH
+            panel.setFrame(currentF, display: false)
+        }
+        
+        FloatingFinderViewModel.shared.isCollapsed = isMinimized
         
         let contentView = FloatingFinderView(vm: FloatingFinderViewModel.shared)
         panel.contentView = NSHostingView(rootView: contentView)
