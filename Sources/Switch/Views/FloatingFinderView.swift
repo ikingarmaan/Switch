@@ -51,17 +51,24 @@ public final class FloatingFinderViewModel: ObservableObject {
     @Published public var isSyncing: Bool = false
     @Published public var isLiveWatchingEnabled: Bool = true
     @Published public var autoSyncWithFinder: Bool = false
+    @Published public var autoScrollToNewFiles: Bool = true
+    @Published public var scrollToItemId: String? = nil
+    @Published public var scrollTriggerToken: UUID = UUID()
+    @Published public var recentNewItemIds: Set<String> = []
     
     private let keyLastPath = "switch.floatingFinder.lastPath"
     private let keyViewMode = "switch.floatingFinder.isGridView"
     private let keyLiveWatching = "switch.floatingFinder.liveWatching"
     private let keyAutoSync = "switch.floatingFinder.autoSync"
+    private let keyAutoScrollToNewFiles = "switch.floatingFinder.autoScrollToNewFiles"
     
     private var directorySource: DispatchSourceFileSystemObject?
     private var directoryFileDescriptor: Int32 = -1
     private var reloadWorkItem: DispatchWorkItem?
     private var pollTimer: Timer?
     private var lastFinderPathChecked: String = ""
+    private var knownItemIds: Set<String> = []
+    private var isNavigatingFolder: Bool = false
     
     private lazy var byteFormatter: ByteCountFormatter = {
         let f = ByteCountFormatter()
@@ -90,6 +97,7 @@ public final class FloatingFinderViewModel: ObservableObject {
         self.isGridView = UserDefaults.standard.bool(forKey: keyViewMode)
         self.isLiveWatchingEnabled = UserDefaults.standard.object(forKey: keyLiveWatching) as? Bool ?? true
         self.autoSyncWithFinder = UserDefaults.standard.bool(forKey: keyAutoSync)
+        self.autoScrollToNewFiles = UserDefaults.standard.object(forKey: keyAutoScrollToNewFiles) as? Bool ?? true
         self.history = [currentURL]
         self.historyIndex = 0
         
@@ -176,6 +184,7 @@ public final class FloatingFinderViewModel: ObservableObject {
             }
             currentURL = url
             UserDefaults.standard.set(url.path, forKey: keyLastPath)
+            isNavigatingFolder = true
             loadCurrentDirectory(addToHistory: false)
             startWatching()
         } else {
@@ -188,6 +197,7 @@ public final class FloatingFinderViewModel: ObservableObject {
         historyIndex -= 1
         currentURL = history[historyIndex]
         UserDefaults.standard.set(currentURL.path, forKey: keyLastPath)
+        isNavigatingFolder = true
         loadCurrentDirectory(addToHistory: false)
         startWatching()
     }
@@ -197,6 +207,7 @@ public final class FloatingFinderViewModel: ObservableObject {
         historyIndex += 1
         currentURL = history[historyIndex]
         UserDefaults.standard.set(currentURL.path, forKey: keyLastPath)
+        isNavigatingFolder = true
         loadCurrentDirectory(addToHistory: false)
         startWatching()
     }
@@ -274,6 +285,9 @@ public final class FloatingFinderViewModel: ObservableObject {
                 ))
             }
             
+            let isNavigating = self.isNavigatingFolder
+            self.isNavigatingFolder = false
+            
             loaded.sort(by: { $0.url.path.localizedStandardCompare($1.url.path) == .orderedAscending })
             if self.items != loaded {
                 self.items = loaded
@@ -281,6 +295,35 @@ public final class FloatingFinderViewModel: ObservableObject {
             if let sel = self.selectedItemId, !loaded.contains(where: { $0.id == sel }) {
                 self.selectedItemId = nil
             }
+            
+            // Auto-detect and scroll down to newly added file or photo
+            if !isNavigating && !knownItemIds.isEmpty && autoScrollToNewFiles {
+                let newItems = loaded.filter { !knownItemIds.contains($0.id) }
+                if !newItems.isEmpty {
+                    let target = newItems.max(by: { ($0.modifiedDate ?? .distantPast) < ($1.modifiedDate ?? .distantPast) }) ?? newItems.first!
+                    
+                    if !self.searchQuery.isEmpty && !target.name.lowercased().contains(self.searchQuery.lowercased()) {
+                        self.searchQuery = ""
+                    }
+                    
+                    self.selectedItemId = target.id
+                    self.scrollToItemId = target.id
+                    self.scrollTriggerToken = UUID()
+                    
+                    let newIds = Set(newItems.map { $0.id })
+                    self.recentNewItemIds.formUnion(newIds)
+                    
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { [weak self] in
+                        MainActor.assumeIsolated {
+                            withAnimation {
+                                self?.recentNewItemIds.subtract(newIds)
+                            }
+                        }
+                    }
+                }
+            }
+            
+            knownItemIds = Set(loaded.map { $0.id })
         } catch {
             if !self.items.isEmpty {
                 self.items = []
@@ -290,6 +333,11 @@ public final class FloatingFinderViewModel: ObservableObject {
     }
     
     // MARK: - Live Directory Monitoring
+    
+    public func setAutoScrollToNewFiles(_ enabled: Bool) {
+        autoScrollToNewFiles = enabled
+        UserDefaults.standard.set(enabled, forKey: keyAutoScrollToNewFiles)
+    }
     
     public func setLiveWatchingEnabled(_ enabled: Bool) {
         isLiveWatchingEnabled = enabled
@@ -498,6 +546,9 @@ public final class FloatingFinderViewModel: ObservableObject {
             try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: false)
             loadCurrentDirectory(addToHistory: false)
             self.selectedItemId = destination.path
+            self.scrollToItemId = destination.path
+            self.scrollTriggerToken = UUID()
+            self.recentNewItemIds.insert(destination.path)
         } catch {
             self.statusMessage = "Could not create folder: \(error.localizedDescription)"
         }
@@ -738,6 +789,14 @@ private struct FloatingFinderHeaderBar: View {
                         }
                     }
                     Button(action: {
+                        vm.setAutoScrollToNewFiles(!vm.autoScrollToNewFiles)
+                    }) {
+                        HStack {
+                            Text("Auto-Scroll to New Files")
+                            if vm.autoScrollToNewFiles { Image(systemName: "checkmark") }
+                        }
+                    }
+                    Button(action: {
                         vm.setAutoSyncWithFinder(!vm.autoSyncWithFinder)
                     }) {
                         HStack {
@@ -912,13 +971,25 @@ private struct FloatingFinderListView: View {
     @ObservedObject var vm: FloatingFinderViewModel
     
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 1) {
-                ForEach(vm.filteredItems) { item in
-                    FloatingFinderListRow(item: item, vm: vm)
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 1) {
+                    ForEach(vm.filteredItems) { item in
+                        FloatingFinderListRow(item: item, vm: vm)
+                            .id(item.id)
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+            .onReceive(vm.$scrollTriggerToken) { _ in
+                if let targetId = vm.scrollToItemId {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        withAnimation(.spring(response: 0.45, dampingFraction: 0.78)) {
+                            proxy.scrollTo(targetId, anchor: .center)
+                        }
+                    }
                 }
             }
-            .padding(.vertical, 4)
         }
     }
 }
@@ -931,6 +1002,10 @@ private struct FloatingFinderListRow: View {
         vm.selectedItemId == item.id
     }
     
+    var isNewlyAdded: Bool {
+        vm.recentNewItemIds.contains(item.id)
+    }
+    
     var body: some View {
         HStack(spacing: 8) {
             Image(nsImage: item.icon)
@@ -941,6 +1016,18 @@ private struct FloatingFinderListRow: View {
                 .font(.system(size: 12, weight: item.isDirectory ? .semibold : .regular))
                 .foregroundColor(item.isHidden ? .secondary.opacity(0.7) : .primary)
                 .lineLimit(1)
+            
+            if isNewlyAdded {
+                Text("NEW")
+                    .font(.system(size: 8, weight: .bold, design: .rounded))
+                    .foregroundColor(.black)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1.5)
+                    .background(
+                        Capsule().fill(Color(red: 0.16, green: 0.82, blue: 0.54))
+                    )
+                    .transition(.scale.combined(with: .opacity))
+            }
             
             Spacer()
             
@@ -956,7 +1043,11 @@ private struct FloatingFinderListRow: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 5)
-        .background(isSelected ? Color.accentColor.opacity(0.25) : Color.clear)
+        .background(
+            isNewlyAdded
+                ? Color(red: 0.16, green: 0.82, blue: 0.54).opacity(0.24)
+                : (isSelected ? Color.accentColor.opacity(0.25) : Color.clear)
+        )
         .contentShape(Rectangle())
         .onTapGesture(count: 2) {
             vm.openItem(url: item.url)
@@ -1002,13 +1093,25 @@ private struct FloatingFinderGridView: View {
     ]
     
     var body: some View {
-        ScrollView {
-            LazyVGrid(columns: columns, spacing: 12) {
-                ForEach(vm.filteredItems) { item in
-                    FloatingFinderGridCell(item: item, vm: vm)
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVGrid(columns: columns, spacing: 12) {
+                    ForEach(vm.filteredItems) { item in
+                        FloatingFinderGridCell(item: item, vm: vm)
+                            .id(item.id)
+                    }
+                }
+                .padding(12)
+            }
+            .onReceive(vm.$scrollTriggerToken) { _ in
+                if let targetId = vm.scrollToItemId {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        withAnimation(.spring(response: 0.45, dampingFraction: 0.78)) {
+                            proxy.scrollTo(targetId, anchor: .center)
+                        }
+                    }
                 }
             }
-            .padding(12)
         }
     }
 }
@@ -1021,11 +1124,25 @@ private struct FloatingFinderGridCell: View {
         vm.selectedItemId == item.id
     }
     
+    var isNewlyAdded: Bool {
+        vm.recentNewItemIds.contains(item.id)
+    }
+    
     var body: some View {
         VStack(spacing: 5) {
-            Image(nsImage: item.icon)
-                .resizable()
-                .frame(width: 38, height: 38)
+            ZStack(alignment: .topTrailing) {
+                Image(nsImage: item.icon)
+                    .resizable()
+                    .frame(width: 38, height: 38)
+                
+                if isNewlyAdded {
+                    Circle()
+                        .fill(Color(red: 0.16, green: 0.82, blue: 0.54))
+                        .frame(width: 9, height: 9)
+                        .overlay(Circle().stroke(Color.white, lineWidth: 1.5))
+                        .offset(x: 4, y: -4)
+                }
+            }
             
             Text(item.name)
                 .font(.system(size: 11, weight: item.isDirectory ? .semibold : .regular))
@@ -1034,7 +1151,11 @@ private struct FloatingFinderGridCell: View {
                 .frame(maxWidth: 80)
         }
         .padding(6)
-        .background(isSelected ? Color.accentColor.opacity(0.25) : Color.white.opacity(0.04))
+        .background(
+            isNewlyAdded
+                ? Color(red: 0.16, green: 0.82, blue: 0.54).opacity(0.25)
+                : (isSelected ? Color.accentColor.opacity(0.25) : Color.white.opacity(0.04))
+        )
         .cornerRadius(8)
         .contentShape(Rectangle())
         .onTapGesture(count: 2) {
@@ -1105,7 +1226,7 @@ private struct FloatingFinderFooterBar: View {
                 Circle()
                     .fill(Color(red: 0.16, green: 0.82, blue: 0.54))
                     .frame(width: 7, height: 7)
-                Text(vm.isLiveWatchingEnabled ? "Always on Top · Live Auto-Refresh" : "Always on Top (\(service.currentLevel.shortLabel))")
+                Text(vm.autoScrollToNewFiles ? "Always on Top · Auto-Scroll to New" : (vm.isLiveWatchingEnabled ? "Always on Top · Live Auto-Refresh" : "Always on Top (\(service.currentLevel.shortLabel))"))
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundColor(Color(red: 0.16, green: 0.82, blue: 0.54))
             }
