@@ -41,6 +41,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
     case textGrabber = "textGrabber"
     case customWidgets = "customWidgets"
     case floatingFinder = "floatingFinder"
+    case macDuo = "macDuo"
     
     public var id: String { rawValue }
     
@@ -83,6 +84,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .textGrabber: return "Live Text (Copy Anywhere)"
         case .customWidgets: return "AI Desktop Widgets"
         case .floatingFinder: return "Floating Finder (Always on Top)"
+        case .macDuo: return "MacBook Duo (Folding Lid)"
         }
     }
     
@@ -125,6 +127,7 @@ public enum SwitchType: String, CaseIterable, Identifiable, Sendable {
         case .textGrabber: return "text.viewfinder"
         case .customWidgets: return "sparkles.rectangle.stack"
         case .floatingFinder: return "square.2.layers.3d.top.filled"
+        case .macDuo: return "laptopcomputer.and.ipad"
         }
     }
     
@@ -396,6 +399,10 @@ public final class SystemControlService: @unchecked Sendable {
         case .floatingFinder:
             let ff = FloatingFinderService.shared
             return (ff.isEnabled, ff.statusSubtitle)
+            
+        case .macDuo:
+            let md = MacDuoService.shared
+            return (md.isEnabled, md.statusSubtitle)
         }
     }
     
@@ -608,6 +615,11 @@ public final class SystemControlService: @unchecked Sendable {
         case .floatingFinder:
             DispatchQueue.main.async {
                 FloatingFinderService.shared.setEnabled(isOn)
+            }
+            
+        case .macDuo:
+            DispatchQueue.main.async {
+                MacDuoService.shared.setEnabled(isOn)
             }
         }
     }

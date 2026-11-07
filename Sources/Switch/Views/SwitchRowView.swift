@@ -2643,6 +2643,114 @@ public struct SwitchRowView: View {
                             }
                         }
                     }
+                } else if item.type == .macDuo {
+                    let md = MacDuoService.shared
+                    HStack(spacing: 4) {
+                        Menu {
+                            Button(action: {
+                                md.toggle()
+                            }) {
+                                HStack {
+                                    Text(md.isEnabled ? "Disable MacBook Duo Effect" : "Enable MacBook Duo Effect")
+                                    Image(systemName: md.isEnabled ? "power" : "bolt.fill")
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            Button(action: {
+                                md.testFoldAnimation()
+                            }) {
+                                HStack {
+                                    Text("⚡ Test Duo Fold Animation")
+                                    Image(systemName: "play.fill")
+                                }
+                            }
+                            
+                            Button(action: {
+                                md.toggleSimulatorWindow()
+                            }) {
+                                HStack {
+                                    Text(md.isSimulatorOpen ? "Close Interactive Fold Simulator" : "Open Interactive Fold Simulator...")
+                                    Image(systemName: "slider.horizontal.3")
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            Section("📐 Quick Lid Angles") {
+                                ForEach([(180.0, "180° Flat"), (135.0, "135° Standard Laptop"), (90.0, "90° Book / Half Fold"), (45.0, "45° Tent Mode"), (15.0, "15° Folded Clamshell")], id: \.0) { angle, label in
+                                    Button(action: {
+                                        md.setAngle(angle, animated: true)
+                                    }) {
+                                        HStack {
+                                            Text(label)
+                                            if abs(md.currentAngle - angle) < 2 {
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            Section("🎨 Fold Theme") {
+                                ForEach(MacDuoStyle.allCases) { style in
+                                    Button(action: {
+                                        md.setStyle(style)
+                                    }) {
+                                        HStack {
+                                            Text(style.title)
+                                            if md.selectedStyle == style {
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Section("🔊 Sound & Haptics") {
+                                Button(action: {
+                                    md.setSoundEnabled(!md.soundEnabled)
+                                }) {
+                                    HStack {
+                                        Text(md.soundEnabled ? "Disable Hinge Click Sounds" : "Enable Hinge Click Sounds")
+                                        Image(systemName: md.soundEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill")
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 3) {
+                                Text(item.subtitle ?? md.statusSubtitle)
+                                    .font(.system(size: 12, weight: item.isOn ? .bold : .medium, design: .rounded))
+                                    .foregroundColor(item.isOn ? Color(red: 0.25, green: 0.65, blue: 1.0) : Color.gray.opacity(0.85))
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 8))
+                                    .foregroundColor(Color.gray.opacity(0.6))
+                            }
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                    }
+                    .contextMenu {
+                        Button(action: {
+                            md.testFoldAnimation()
+                        }) {
+                            HStack {
+                                Text("Test Duo Fold Animation")
+                                Image(systemName: "play.fill")
+                            }
+                        }
+                        Button(action: {
+                            md.openSimulatorWindow()
+                        }) {
+                            HStack {
+                                Text("Open Interactive Simulator...")
+                                Image(systemName: "slider.horizontal.3")
+                            }
+                        }
+                    }
                 } else if item.type == .ultraPowerSave {
                     let ps = UltraPowerSaveService.shared
                     HStack(spacing: 6) {

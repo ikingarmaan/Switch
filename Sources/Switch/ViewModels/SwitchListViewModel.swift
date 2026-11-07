@@ -67,6 +67,7 @@ public final class SwitchListViewModel: ObservableObject {
         case .textGrabber: return ["ocr", "copy text", "extract text", "image text", "video text"]
         case .customWidgets: return ["widget", "desktop", "clock", "crypto", "pomodoro", "notes", "todo", "weather", "ai", "prompt", "studio"]
         case .floatingFinder: return ["finder", "float", "always on top", "afloat", "floaty", "pin", "window", "overlay"]
+        case .macDuo: return ["macbook duo", "duo", "fold", "lid", "clamshell", "folding screen", "hinge", "bend", "3d", "screen"]
         default: return []
         }
     }
@@ -680,6 +681,31 @@ public final class SwitchListViewModel: ObservableObject {
             }
             .store(in: &cancellables)
             
+        NotificationCenter.default.publisher(for: .macDuoStateDidChange)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] notif in
+                guard let self = self,
+                      let index = self.switches.firstIndex(where: { $0.type == .macDuo })
+                else { return }
+                let md = MacDuoService.shared
+                let isEnabled = notif.object as? Bool ?? md.isEnabled
+                self.switches[index].isOn = isEnabled
+                self.switches[index].isLoading = false
+                self.switches[index].subtitle = md.statusSubtitle
+            }
+            .store(in: &cancellables)
+            
+        NotificationCenter.default.publisher(for: .macDuoAngleDidChange)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self = self,
+                      let index = self.switches.firstIndex(where: { $0.type == .macDuo })
+                else { return }
+                let md = MacDuoService.shared
+                self.switches[index].subtitle = md.statusSubtitle
+            }
+            .store(in: &cancellables)
+            
         // Lifecycle optimizations: only run periodic refresh when Switch UI is visible
         NotificationCenter.default.publisher(for: .switchPopoverDidOpen)
             .receive(on: RunLoop.main)
@@ -731,6 +757,7 @@ public final class SwitchListViewModel: ObservableObject {
             .wisprFlow,
             .dockDoor,
             .floatingFinder,
+            .macDuo,
             .ultraPowerSave,
             .textGrabber
         ]
