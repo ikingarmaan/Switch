@@ -2527,12 +2527,32 @@ public struct SwitchRowView: View {
                             }
                             
                             if ff.isEnabled {
+                                if ff.isMiniaturized {
+                                    Button(action: {
+                                        ff.restore()
+                                    }) {
+                                        HStack {
+                                            Text("Restore Floating Finder Window")
+                                            Image(systemName: "arrow.up.forward.app")
+                                        }
+                                    }
+                                } else {
+                                    Button(action: {
+                                        ff.minimize()
+                                    }) {
+                                        HStack {
+                                            Text("Minimize Window to Dock")
+                                            Image(systemName: "minus")
+                                        }
+                                    }
+                                }
+                                
                                 Button(action: {
-                                    ff.toggleMinimize()
+                                    ff.toggleCompactBar()
                                 }) {
                                     HStack {
-                                        Text(ff.isMinimized ? "Expand Floating Finder Window" : "Minimize to Floating Bar")
-                                        Image(systemName: ff.isMinimized ? "arrow.up.left.and.arrow.down.right" : "minus")
+                                        Text(ff.isCompactBar ? "Expand File Browser View" : "Collapse to Mini Bar")
+                                        Image(systemName: ff.isCompactBar ? "rectangle.expand.vertical" : "rectangle.compress.vertical")
                                     }
                                 }
                             }

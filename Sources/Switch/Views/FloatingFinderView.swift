@@ -574,7 +574,7 @@ public struct FloatingFinderView: View {
                 // Header Bar
                 FloatingFinderHeaderBar(vm: vm, service: service)
                 
-                if !service.isMinimized {
+                if !service.isCompactBar {
                     // Breadcrumb Path Navigation
                     FloatingFinderBreadcrumbBar(vm: vm)
                     
@@ -598,8 +598,8 @@ public struct FloatingFinderView: View {
         }
         .frame(
             minWidth: 380,
-            minHeight: service.isMinimized ? 48 : 360,
-            maxHeight: service.isMinimized ? 48 : .infinity
+            minHeight: service.isCompactBar ? 48 : 360,
+            maxHeight: service.isCompactBar ? 48 : .infinity
         )
         .cornerRadius(12)
         .overlay(
@@ -617,7 +617,7 @@ private struct FloatingFinderHeaderBar: View {
     
     var body: some View {
         HStack(spacing: 8) {
-            // Traffic Light Simulators / Window Control
+            // Traffic Light Window Controls
             HStack(spacing: 6) {
                 Button(action: {
                     service.setEnabled(false)
@@ -630,19 +630,19 @@ private struct FloatingFinderHeaderBar: View {
                 .help("Close Floating Finder (⌘W)")
                 
                 Button(action: {
-                    service.toggleMinimize()
+                    service.minimize()
                 }) {
                     ZStack {
                         Circle()
                             .fill(Color(red: 1.0, green: 0.74, blue: 0.22))
                             .frame(width: 12, height: 12)
-                        Image(systemName: service.isMinimized ? "plus" : "minus")
+                        Image(systemName: "minus")
                             .font(.system(size: 7, weight: .bold))
-                            .foregroundColor(.black.opacity(service.isMinimized ? 0.75 : 0.45))
+                            .foregroundColor(.black.opacity(0.55))
                     }
                 }
                 .buttonStyle(.plain)
-                .help(service.isMinimized ? "Expand Window (⌘M)" : "Minimize Window (⌘M)")
+                .help("Minimize Window to Dock (⌘M)")
                 
                 Button(action: {
                     service.openNewFinderWindow()
@@ -656,7 +656,7 @@ private struct FloatingFinderHeaderBar: View {
             }
             .padding(.trailing, 4)
             
-            if !service.isMinimized {
+            if !service.isCompactBar {
                 // Back / Forward / Up Controls
                 HStack(spacing: 2) {
                     Button(action: { vm.goBack() }) {
@@ -705,7 +705,7 @@ private struct FloatingFinderHeaderBar: View {
                     .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1)
                 
-                if service.isMinimized {
+                if service.isCompactBar {
                     Text("(\(vm.items.count) items)")
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
@@ -713,17 +713,17 @@ private struct FloatingFinderHeaderBar: View {
             }
             .contentShape(Rectangle())
             .onTapGesture(count: 2) {
-                service.toggleMinimize()
+                service.minimize()
             }
-            .help(service.isMinimized ? "Double-click to expand (⌘M)" : "Double-click to minimize (⌘M)")
+            .help("Double-click to minimize (⌘M)")
             
             Spacer()
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) {
-                    service.toggleMinimize()
+                    service.minimize()
                 }
             
-            if !service.isMinimized {
+            if !service.isCompactBar {
                 // Quick Jumps (Desktop, Downloads, Home)
                 HStack(spacing: 3) {
                     QuickJumpButton(icon: "house.fill", label: "Home") {
@@ -801,9 +801,22 @@ private struct FloatingFinderHeaderBar: View {
                 .buttonStyle(.plain)
                 .help(vm.isGridView ? "Switch to List View" : "Switch to Grid View")
                 
+                // Collapse to Mini-Bar Button
+                Button(action: {
+                    service.toggleCompactBar()
+                }) {
+                    Image(systemName: "rectangle.compress.vertical")
+                        .font(.system(size: 11, weight: .semibold))
+                        .frame(width: 24, height: 24)
+                        .background(Color.white.opacity(0.08))
+                        .cornerRadius(5)
+                }
+                .buttonStyle(.plain)
+                .help("Collapse to Mini Bar")
+                
                 // Dedicated Minimize Button
                 Button(action: {
-                    service.toggleMinimize()
+                    service.minimize()
                 }) {
                     Image(systemName: "minus")
                         .font(.system(size: 11, weight: .bold))
@@ -812,7 +825,7 @@ private struct FloatingFinderHeaderBar: View {
                         .cornerRadius(5)
                 }
                 .buttonStyle(.plain)
-                .help("Minimize to Mini Bar (⌘M)")
+                .help("Minimize Window to Dock (⌘M)")
             } else {
                 // Minimized Mini-Bar Controls
                 
@@ -842,12 +855,12 @@ private struct FloatingFinderHeaderBar: View {
                 .buttonStyle(.plain)
                 .help("Open in Native Finder")
                 
-                // Prominent Expand Button
+                // Expand Mini-Bar Button
                 Button(action: {
-                    service.toggleMinimize()
+                    service.toggleCompactBar()
                 }) {
                     HStack(spacing: 4) {
-                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        Image(systemName: "rectangle.expand.vertical")
                             .font(.system(size: 10, weight: .bold))
                         Text("Expand")
                             .font(.system(size: 11, weight: .semibold))
@@ -859,7 +872,20 @@ private struct FloatingFinderHeaderBar: View {
                     .cornerRadius(6)
                 }
                 .buttonStyle(.plain)
-                .help("Expand Floating Finder (⌘M)")
+                .help("Expand File Browser View")
+                
+                // Dedicated Minimize Button
+                Button(action: {
+                    service.minimize()
+                }) {
+                    Image(systemName: "minus")
+                        .font(.system(size: 11, weight: .bold))
+                        .frame(width: 24, height: 24)
+                        .background(Color.white.opacity(0.08))
+                        .cornerRadius(5)
+                }
+                .buttonStyle(.plain)
+                .help("Minimize Window to Dock (⌘M)")
             }
             
             // Opacity & Layer Menu
